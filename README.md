@@ -1,0 +1,93 @@
+[README.md](https://github.com/user-attachments/files/27117287/README.md)
+# dakma-sdk
+
+`dakma-sdk` is a Python explainability SDK for model governance and decision transparency across:
+
+- data ingestion (`dtype`, null counts)
+- feature engineering lineage
+- training metadata (params and metrics)
+- inference-time explainability (SHAP or Integrated Gradients + plain language + audit id)
+- basic monitoring hooks (bias and drift indicators)
+
+## Install
+
+```bash
+pip install dakma-sdk
+```
+
+For full ML support:
+
+```bash
+pip install "dakma-sdk[ml]"
+```
+
+## Imports
+
+Use either the short name or the implementation package:
+
+```python
+import dakma
+# or
+import dakma_sdk
+```
+
+Both expose `init`, `DakmaClient`, and the result types from `dakma_sdk.models`.
+
+For **tabular audit output** (Markdown tables: data schema, training params, monitoring, inference), use `DakmaClient.format_audit_log_markdown()` or `result.as_markdown_table()` on a single decision.
+
+**Downloadable reports:** write UTF-8 files you can open, share, or print to PDF:
+
+- `dm_c.write_audit_report("audit_report.md")` or `dm_c.write_audit_report("audit_report.html", format="html")` — full audit trail
+- `result.write_report("decision.md")` or `result.write_report("decision.html", format="html")` — one decision
+
+**Governance and evaluation (EU AI Act Art. 13 support):** every full audit and single-decision report starts with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **EU AI Act (Art. 13) — documentation** — intended use, limitations, human oversight, data provenance, model changelog. Populate these with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
+
+The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The Integrated Gradients example writes the same audit outputs under `examples/reports_ig/`. Those scripts register sample governance and test-set metrics for demonstration.
+
+## Quickstart
+
+```python
+import dakma
+from xgboost import XGBClassifier
+
+dm_c = dakma.init(
+    project="credit-scoring-package",
+    regulation="eu-ai-act",
+    risk_level="high",
+)
+
+@dm_c.track_data
+def prepare_features(df):
+    df["debt_ratio"] = df["total_debt"] / df["annual_income"]
+    df["credit_util"] = df["balance"] / df["credit_limit"]
+    return df
+
+@dm_c.track_training
+def train(X_train, y_train):
+    model = XGBClassifier(n_estimators=200, max_depth=5)
+    model.fit(X_train, y_train)
+    return model
+
+@dm_c.explain(counterfactual=True)
+def score_applicant(model, applicant_row):
+    return model.predict_proba(applicant_row)
+
+result = score_applicant(model, applicant_row)
+print(result.decision_output.to_text())
+print(result.explain.plain_language)
+print(result.explain.audit_trail_id)
+print(result.as_markdown_table())
+```
+
+## Example: `credit.csv` and XGBoost
+
+The repo includes `examples/credit.csv` with columns `total_debt`, `annual_income`, `balance`, `credit_limit`, `target`, and optional `period` (`baseline` vs `drift`). A few cells are intentionally **empty** (nulls) so `@track_data` schema snapshots and engineered features reflect missing values. The example **trains on baseline** and **evaluates on drift** so feature means (debt_ratio, credit_util) and label prevalence shift—`monitor()` then reports **drift** (`positive_prediction_rate` vs training prevalence) alongside accuracy. Run:
+
+```bash
+pip install "dakma-sdk[ml]"
+cd examples && python credit_scoring_example.py
+```
+
+Override the path by editing `CSV_PATH` in `credit_scoring_example.py` or copy `credit.csv` beside your script.
+
+The same script calls `dm_c.monitor(...)` on the hold-out test set: it compares `y_true` vs thresholded `y_pred`, optional drift vs `expected_rate` (here, training-set label prevalence), and optional `group_positive_rates` when you pass `protected_feature` (the example uses income bands as a stand-in).
