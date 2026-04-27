@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/27117287/README.md)
 # dakma-sdk
 
 `dakma-sdk` is a Python explainability SDK for model governance and decision transparency across:
@@ -6,7 +5,7 @@
 - data ingestion (`dtype`, null counts)
 - feature engineering lineage
 - training metadata (params and metrics)
-- inference-time explainability (SHAP or Integrated Gradients + plain language + audit id)
+- inference-time explainability: **SHAP** for common tabular / tree models, or **Integrated Gradients** (Captum) for differentiable models such as **PyTorch** `nn.Module` (+ plain language + audit id)
 - basic monitoring hooks (bias and drift indicators)
 
 ## Install
@@ -15,10 +14,16 @@
 pip install dakma-sdk
 ```
 
-For full ML support:
+For tabular / tree ML (pandas, scikit-learn, XGBoost, SHAP):
 
 ```bash
 pip install "dakma-sdk[ml]"
+```
+
+For **deep learning** (PyTorch + Captum, used by Integrated Gradients), install the `dl` extra as well (often with `ml` for sklearn data utilities in the examples):
+
+```bash
+pip install "dakma-sdk[ml,dl]"
 ```
 
 ## Imports
@@ -42,7 +47,9 @@ For **tabular audit output** (Markdown tables: data schema, training params, mon
 
 **Governance and evaluation (EU AI Act Art. 13 support):** every full audit and single-decision report starts with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **EU AI Act (Art. 13) — documentation** — intended use, limitations, human oversight, data provenance, model changelog. Populate these with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
 
-The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The Integrated Gradients example writes the same audit outputs under `examples/reports_ig/`. Those scripts register sample governance and test-set metrics for demonstration.
+The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. Both scripts register sample governance and test-set metrics for demonstration.
+
+**Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
 
 ## Quickstart
 
@@ -91,3 +98,12 @@ cd examples && python credit_scoring_example.py
 Override the path by editing `CSV_PATH` in `credit_scoring_example.py` or copy `credit.csv` beside your script.
 
 The same script calls `dm_c.monitor(...)` on the hold-out test set: it compares `y_true` vs thresholded `y_pred`, optional drift vs `expected_rate` (here, training-set label prevalence), and optional `group_positive_rates` when you pass `protected_feature` (the example uses income bands as a stand-in).
+
+## Example: PyTorch MLP and Integrated Gradients
+
+`examples/mlp_integrated_gradients_example.py` trains a small MLP on the sklearn breast cancer dataset and explains a decision with Captum’s Integrated Gradients, using the same audit and downloadable-report flow as the XGBoost example. It uses `@dm.explain_integrated_gradients`, `register_integrated_gradients_feature_importance`, and writes `audit_report` / `mlp_decision` Markdown and HTML under `examples/reports_ig/`.
+
+```bash
+pip install "dakma-sdk[ml,dl]"
+cd examples && python mlp_integrated_gradients_example.py
+```
