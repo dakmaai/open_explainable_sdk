@@ -1,8 +1,10 @@
+LICENSE
 README.md
 pyproject.toml
 dakma/__init__.py
 dakma_sdk/__init__.py
 dakma_sdk/audit_format.py
+dakma_sdk/compute_usage.py
 dakma_sdk/core.py
 dakma_sdk/integrated_gradients.py
 dakma_sdk/models.py
