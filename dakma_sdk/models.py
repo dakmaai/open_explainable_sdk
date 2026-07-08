@@ -38,6 +38,7 @@ class ExplainPayload:
     plain_language: str
     top_factors: List[TopFactor] = field(default_factory=list)
     counterfactual: Optional[str] = None
+    #: Documentation status notes for reports (not legal or compliance certification).
     regulation_flags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     feature_importance: List[FeatureImportance] = field(default_factory=list)
@@ -45,7 +46,7 @@ class ExplainPayload:
     attribution_backend: Optional[str] = None
     #: RAM, CPU, and optional GPU stats for the explained inference (see :mod:`dakma_sdk.compute_usage`).
     compute_usage: Optional[Dict[str, Any]] = None
-    #: EU AI Act Art. 13 style fields; set via :meth:`dakma_sdk.core.DakmaClient.register_governance` (snapshotted at inference time).
+    #: Art. 13-style documentation template fields; set via :meth:`dakma_sdk.core.DakmaClient.register_governance` (snapshotted at inference time).
     governance: Optional[Dict[str, Any]] = None
     #: Test/hold-out metrics, split size, etc.; set via :meth:`dakma_sdk.core.DakmaClient.register_evaluation`.
     evaluation: Optional[Dict[str, Any]] = None

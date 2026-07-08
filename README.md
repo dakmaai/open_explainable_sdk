@@ -1,5 +1,7 @@
 # dakma-sdk
 
+PyPI package **`dakma-sdk`** — source repo: [dakmaai/open_explainable_sdk](https://github.com/dakmaai/open_explainable_sdk). Import as `dakma` or `dakma_sdk`.
+
 `dakma-sdk` is a Python explainability SDK for model governance and decision transparency across:
 
 - data ingestion (`dtype`, null counts)
@@ -7,6 +9,8 @@
 - training metadata (params and metrics)
 - inference-time explainability: **SHAP** for common tabular / tree models, or **Integrated Gradients** (Captum) for differentiable models such as **PyTorch** `nn.Module` (+ plain language + audit id)
 - basic monitoring hooks (bias and drift indicators)
+
+> **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability information. It does **not** provide legal advice, regulatory certification, or a guarantee of compliance with the EU AI Act, GDPR, or any other law.
 
 ## Install
 
@@ -45,13 +49,19 @@ For **tabular audit output** (Markdown tables: data schema, training params, mon
 - `dm_c.write_audit_report("audit_report.md")` or `dm_c.write_audit_report("audit_report.html", format="html")` — full audit trail
 - `result.write_report("decision.md")` or `result.write_report("decision.html", format="html")` — one decision
 
-**Governance and evaluation (EU AI Act Art. 13 support):** every full audit and single-decision report starts with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **EU AI Act (Art. 13) — documentation** — intended use, limitations, human oversight, data provenance, model changelog. Populate these with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
+**Governance and evaluation templates:** every full audit and single-decision report can start with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **EU AI Act (Art. 13) — documentation template** — intended use, limitations, human oversight, data provenance, model changelog. These sections are *documentation aids only*; populate them with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
 
 The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. Both scripts register sample governance and test-set metrics for demonstration.
 
 **Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
 
-## Quickstart
+## Quickstart (tabular ML)
+
+Requires the **`[ml]`** extra (XGBoost, SHAP, pandas):
+
+```bash
+pip install "dakma-sdk[ml]"
+```
 
 ```python
 import dakma
@@ -107,3 +117,24 @@ The same script calls `dm_c.monitor(...)` on the hold-out test set: it compares 
 pip install "dakma-sdk[ml,dl]"
 cd examples && python mlp_integrated_gradients_example.py
 ```
+
+## Testing
+
+From a clone of this repository:
+
+```bash
+pip install -e ".[dev]"        # unit tests only (numpy)
+pip install -e ".[dev,ml,dl]"  # full suite including example smoke tests
+pytest
+pytest -m smoke              # example scripts only
+```
+
+CI runs `pytest` on Python 3.9–3.12 (see `.github/workflows/ci.yml`).
+
+## Limitations
+
+- **Documentation aid only** — not legal advice or compliance certification.
+- **SHAP / IG** require optional deps; failures may return empty explanations unless deps are installed.
+- **Feature lineage** is inferred from simple `df["col"] = ...` source patterns only.
+- **Decision labels** default to `APPROVED` / `DECLINED` (credit-style); not generic for all ML tasks.
+- **`monitor()`** group rates are illustrative; not a full fairness or bias audit framework.

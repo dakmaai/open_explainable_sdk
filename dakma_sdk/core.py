@@ -33,6 +33,17 @@ def _safe_import_shap():
         return None
 
 
+_EU13_GOVERNANCE_KEYS = (
+    "intended_use",
+    "known_limitations",
+    "human_oversight",
+    "data_provenance",
+    "model_changelog",
+)
+
+_DOCUMENTATION_AID_NOTE = "Documentation aid only — not legal or compliance certification"
+
+
 class DakmaClient:
     def __init__(self, project: str, regulation: str, risk_level: str):
         self.project = project
@@ -114,8 +125,9 @@ class DakmaClient:
         model_changelog: Any = None,
         **extra: Any,
     ) -> None:
-        """Declare EU AI Act Art. 13 style transparency text for audit and decision reports.
+        """Record Art. 13-style transparency text for audit and decision reports.
 
+        This is a documentation template only; it does not certify regulatory compliance.
         Unknown keyword arguments are merged into the governance record. Empty values are
         ignored. Documentation appears in :meth:`write_audit_report` and in decision reports for
         subsequent explained inferences.
@@ -838,10 +850,21 @@ class DakmaClient:
         )
 
     def _regulation_flags(self) -> List[str]:
+        """Human-readable documentation status notes (not compliance certification)."""
         norm = self.regulation.lower().strip()
         if norm == "eu-ai-act":
-            return ["EU AI Act Art.13 ✓", "GDPR Art.22 ✓"]
-        return [f"{self.regulation} ✓"]
+            populated = sum(
+                1 for key in _EU13_GOVERNANCE_KEYS if self._governance.get(key) not in (None, "")
+            )
+            total = len(_EU13_GOVERNANCE_KEYS)
+            return [
+                f"EU AI Act Art. 13 documentation fields: {populated}/{total} populated",
+                _DOCUMENTATION_AID_NOTE,
+            ]
+        return [
+            f"Regulation context: {self.regulation}",
+            _DOCUMENTATION_AID_NOTE,
+        ]
 
     @staticmethod
     def _audit_trail_id() -> str:

@@ -8,6 +8,19 @@ from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequen
 
 import numpy as np
 
+DOCUMENTATION_DISCLAIMER_MARKDOWN = (
+    "> **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability "
+    "information. It does **not** provide legal advice, regulatory certification, or a "
+    "guarantee of compliance with the EU AI Act, GDPR, or any other law."
+)
+
+DOCUMENTATION_DISCLAIMER_HTML = (
+    '<p class="dakma-disclaimer"><strong>Disclaimer:</strong> dakma-sdk helps you '
+    "<em>document</em> model lifecycle and explainability information. It does "
+    "<strong>not</strong> provide legal advice, regulatory certification, or a guarantee "
+    "of compliance with the EU AI Act, GDPR, or any other law.</p>"
+)
+
 
 def _cell(value: Any, *, max_len: int = 500) -> str:
     if value is None:
@@ -88,9 +101,9 @@ def format_governance_eu13_markdown(governance: Optional[Mapping[str, Any]] = No
     g = dict(governance or {})
     std_keys = {k for k, _ in _EU13_FIELD_ROWS}
     lines: List[str] = [
-        "## EU AI Act (Art. 13) — documentation",
+        "## EU AI Act (Art. 13) — documentation template",
         "",
-        "Transparency fields below support Art. 13-style disclosure. Use "
+        "Fields below are an Art. 13-style *documentation template* only. Use "
         "``DakmaClient.register_governance(...)`` to fill them. Empty items are flagged in reports.",
         "",
     ]
@@ -281,7 +294,7 @@ def format_compliance_preamble_markdown(
 ) -> str:
     g = format_governance_eu13_markdown(governance)
     e = format_evaluation_block_markdown(evaluation, entries=entries)
-    return f"{g}\n\n{e}\n\n---\n\n"
+    return f"{DOCUMENTATION_DISCLAIMER_MARKDOWN}\n\n{g}\n\n{e}\n\n---\n\n"
 
 
 def format_audit_entry_markdown(entry: Dict[str, Any], index: int) -> str:
@@ -449,12 +462,7 @@ def format_inference_result_markdown(
     if include_compliance_sections:
         g = explain_pre.get("governance") or {}
         e = explain_pre.get("evaluation") or {}
-        parts.append(format_governance_eu13_markdown(g))
-        parts.append("")
-        parts.append(format_evaluation_block_markdown(e, entries=None))
-        parts.append("")
-        parts.append("---")
-        parts.append("")
+        parts.append(format_compliance_preamble_markdown(governance=g, evaluation=e, entries=None))
     dec_out = result_dict.get("decision_output") or {}
     explain = result_dict.get("explain") or {}
     raw_decision = result_dict.get("decision")
@@ -499,8 +507,8 @@ def format_inference_result_markdown(
     flags = explain.get("regulation_flags") or []
     if flags:
         parts.append("")
-        parts.append("**Regulation flags**")
-        parts.append(_markdown_table(["Flag"], [[f] for f in flags]))
+        parts.append("**Documentation status**")
+        parts.append(_markdown_table(["Note"], [[f] for f in flags]))
 
     cu = explain.get("compute_usage")
     if cu and isinstance(cu, dict):
@@ -790,7 +798,7 @@ def wrap_html_document(*, title: str, body_inner: str, subtitle: Optional[str] =
     section.entry {{ margin-bottom: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 1rem; }}
     figure.dakma-shap-chart {{ margin: 0.5rem 0 1rem; max-width: 56rem; }}
     figure.dakma-shap-chart svg {{ display: block; width: 100%; height: auto; max-width: 560px; }}
-    p.dakma-chart-note {{ margin: 0.25rem 0 0.75rem; font-size: 0.88rem; color: #555; }}
+    p.dakma-disclaimer {{ margin: 0 0 1.25rem; padding: 0.65rem 0.85rem; background: #fff8e6; border: 1px solid #e6d9b8; border-radius: 4px; font-size: 0.9rem; }}
   </style>
 </head>
 <body>
@@ -827,8 +835,11 @@ def format_governance_eu13_html(governance: Optional[Mapping[str, Any]] = None) 
     g = dict(governance or {})
     std_keys = {k for k, _ in _EU13_FIELD_ROWS}
     parts: List[str] = [
-        _html_h2("EU AI Act (Art. 13) — documentation"),
-        _html_p_em("Use DakmaClient.register_governance(...) to fill these fields. Empty items are flagged."),
+        _html_h2("EU AI Act (Art. 13) — documentation template"),
+        _html_p_em(
+            "Fields below are an Art. 13-style documentation template only. "
+            "Use DakmaClient.register_governance(...) to fill them. Empty items are flagged."
+        ),
     ]
     rows: List[Sequence[Any]] = []
     for key, label in _EU13_FIELD_ROWS:
@@ -942,7 +953,10 @@ def format_compliance_preamble_html(
 ) -> str:
     g = format_governance_eu13_html(governance)
     e = format_evaluation_block_html(evaluation, entries=entries)
-    return f'<section class="dakma-compliance">{g}\n{e}\n<hr></section>\n\n'
+    return (
+        f'<section class="dakma-compliance">{DOCUMENTATION_DISCLAIMER_HTML}\n'
+        f"{g}\n{e}\n<hr></section>\n\n"
+    )
 
 
 def format_inference_result_html(
@@ -1001,8 +1015,8 @@ def format_inference_result_html(
 
     flags = explain.get("regulation_flags") or []
     if flags:
-        parts.append(_html_h3("Regulation flags"))
-        parts.append(_html_table(["Flag"], [[f] for f in flags]))
+        parts.append(_html_h3("Documentation status"))
+        parts.append(_html_table(["Note"], [[f] for f in flags]))
 
     cu = explain.get("compute_usage")
     if cu and isinstance(cu, dict):
