@@ -10,7 +10,7 @@ PyPI package **`dakma-sdk`** — source repo: [dakmaai/open_explainable_sdk](htt
 - inference-time explainability: **SHAP** for common tabular / tree models, or **Integrated Gradients** (Captum) for differentiable models such as **PyTorch** `nn.Module` (+ plain language + audit id)
 - basic monitoring hooks (bias and drift indicators)
 
-> **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability information. It does **not** provide legal advice, regulatory certification, or a guarantee of compliance with the EU AI Act, GDPR, or any other law.
+> **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability information. It does **not** provide legal advice or regulatory certification.
 
 ## Install
 
@@ -49,7 +49,7 @@ For **tabular audit output** (Markdown tables: data schema, training params, mon
 - `dm_c.write_audit_report("audit_report.md")` or `dm_c.write_audit_report("audit_report.html", format="html")` — full audit trail
 - `result.write_report("decision.md")` or `result.write_report("decision.html", format="html")` — one decision
 
-**Governance and evaluation templates:** every full audit and single-decision report can start with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **EU AI Act (Art. 13) — documentation template** — intended use, limitations, human oversight, data provenance, model changelog. These sections are *documentation aids only*; populate them with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
+**Governance and evaluation templates:** every full audit and single-decision report can start with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **Governance documentation** — intended use, limitations, human oversight, data provenance, model changelog. These sections are *documentation aids only*; populate them with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
 
 The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. Both scripts register sample governance and test-set metrics for demonstration.
 
@@ -69,7 +69,7 @@ from xgboost import XGBClassifier
 
 dm_c = dakma.init(
     project="credit-scoring-package",
-    regulation="eu-ai-act",
+    regulation="internal-policy",
     risk_level="high",
 )
 
