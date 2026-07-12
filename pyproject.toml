@@ -50,6 +50,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
   "smoke: end-to-end example script smoke tests (needs optional deps)",
 ]

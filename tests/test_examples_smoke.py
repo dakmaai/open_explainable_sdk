@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from tests.conftest import EXAMPLES_DIR, requires_dl, requires_ml, requires_sklearn_ml
+from tests.helpers import EXAMPLES_DIR, requires_dl, requires_ml, requires_sklearn_ml
 
 
 def _run_example(script_name: str, *, timeout: int = 180) -> subprocess.CompletedProcess[str]:
