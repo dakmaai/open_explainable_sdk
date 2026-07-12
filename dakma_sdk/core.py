@@ -33,7 +33,7 @@ def _safe_import_shap():
         return None
 
 
-_EU13_GOVERNANCE_KEYS = (
+_GOVERNANCE_FIELD_KEYS = (
     "intended_use",
     "known_limitations",
     "human_oversight",
@@ -125,7 +125,7 @@ class DakmaClient:
         model_changelog: Any = None,
         **extra: Any,
     ) -> None:
-        """Record Art. 13-style transparency text for audit and decision reports.
+        """Record governance transparency text for audit and decision reports.
 
         This is a documentation template only; it does not certify regulatory compliance.
         Unknown keyword arguments are merged into the governance record. Empty values are
@@ -851,18 +851,13 @@ class DakmaClient:
 
     def _regulation_flags(self) -> List[str]:
         """Human-readable documentation status notes (not compliance certification)."""
-        norm = self.regulation.lower().strip()
-        if norm == "eu-ai-act":
-            populated = sum(
-                1 for key in _EU13_GOVERNANCE_KEYS if self._governance.get(key) not in (None, "")
-            )
-            total = len(_EU13_GOVERNANCE_KEYS)
-            return [
-                f"EU AI Act Art. 13 documentation fields: {populated}/{total} populated",
-                _DOCUMENTATION_AID_NOTE,
-            ]
+        populated = sum(
+            1 for key in _GOVERNANCE_FIELD_KEYS if self._governance.get(key) not in (None, "")
+        )
+        total = len(_GOVERNANCE_FIELD_KEYS)
         return [
-            f"Regulation context: {self.regulation}",
+            f"Governance documentation fields: {populated}/{total} populated",
+            f"Policy context: {self.regulation}",
             _DOCUMENTATION_AID_NOTE,
         ]
 

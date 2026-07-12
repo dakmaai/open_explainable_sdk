@@ -10,15 +10,13 @@ import numpy as np
 
 DOCUMENTATION_DISCLAIMER_MARKDOWN = (
     "> **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability "
-    "information. It does **not** provide legal advice, regulatory certification, or a "
-    "guarantee of compliance with the EU AI Act, GDPR, or any other law."
+    "information. It does **not** provide legal advice or regulatory certification."
 )
 
 DOCUMENTATION_DISCLAIMER_HTML = (
     '<p class="dakma-disclaimer"><strong>Disclaimer:</strong> dakma-sdk helps you '
     "<em>document</em> model lifecycle and explainability information. It does "
-    "<strong>not</strong> provide legal advice, regulatory certification, or a guarantee "
-    "of compliance with the EU AI Act, GDPR, or any other law.</p>"
+    "<strong>not</strong> provide legal advice or regulatory certification.</p>"
 )
 
 
@@ -65,9 +63,9 @@ def _schema_to_rows(schema: Mapping[str, Any]) -> List[List[Any]]:
     return rows
 
 
-# --- EU AI Act Art. 13 + evaluation (all audit and decision reports) ---
+# --- Governance + evaluation (all audit and decision reports) ---
 
-_EU13_FIELD_ROWS: List[Tuple[str, str]] = [
+_GOVERNANCE_FIELD_ROWS: List[Tuple[str, str]] = [
     ("intended_use", "Intended use"),
     ("known_limitations", "Known limitations"),
     ("human_oversight", "Human oversight mechanism"),
@@ -97,18 +95,18 @@ def _format_changelog_value(value: Any) -> str:
     return _cell(value, max_len=2000)
 
 
-def format_governance_eu13_markdown(governance: Optional[Mapping[str, Any]] = None) -> str:
+def format_governance_markdown(governance: Optional[Mapping[str, Any]] = None) -> str:
     g = dict(governance or {})
-    std_keys = {k for k, _ in _EU13_FIELD_ROWS}
+    std_keys = {k for k, _ in _GOVERNANCE_FIELD_ROWS}
     lines: List[str] = [
-        "## EU AI Act (Art. 13) — documentation template",
+        "## Governance documentation",
         "",
-        "Fields below are an Art. 13-style *documentation template* only. Use "
+        "Fields below are a *documentation template* only. Use "
         "``DakmaClient.register_governance(...)`` to fill them. Empty items are flagged in reports.",
         "",
     ]
     rows: List[Sequence[Any]] = []
-    for key, label in _EU13_FIELD_ROWS:
+    for key, label in _GOVERNANCE_FIELD_ROWS:
         v = g.get(key)
         if key == "model_changelog" and (v is not None and v != ""):
             val = _format_changelog_value(v)
@@ -292,7 +290,7 @@ def format_compliance_preamble_markdown(
     evaluation: Optional[Mapping[str, Any]] = None,
     entries: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> str:
-    g = format_governance_eu13_markdown(governance)
+    g = format_governance_markdown(governance)
     e = format_evaluation_block_markdown(evaluation, entries=entries)
     return f"{DOCUMENTATION_DISCLAIMER_MARKDOWN}\n\n{g}\n\n{e}\n\n---\n\n"
 
@@ -831,18 +829,18 @@ def _changelog_cell_html(value: Any) -> str:
     return _html_esc(value)
 
 
-def format_governance_eu13_html(governance: Optional[Mapping[str, Any]] = None) -> str:
+def format_governance_html(governance: Optional[Mapping[str, Any]] = None) -> str:
     g = dict(governance or {})
-    std_keys = {k for k, _ in _EU13_FIELD_ROWS}
+    std_keys = {k for k, _ in _GOVERNANCE_FIELD_ROWS}
     parts: List[str] = [
-        _html_h2("EU AI Act (Art. 13) — documentation template"),
+        _html_h2("Governance documentation"),
         _html_p_em(
-            "Fields below are an Art. 13-style documentation template only. "
+            "Fields below are a documentation template only. "
             "Use DakmaClient.register_governance(...) to fill them. Empty items are flagged."
         ),
     ]
     rows: List[Sequence[Any]] = []
-    for key, label in _EU13_FIELD_ROWS:
+    for key, label in _GOVERNANCE_FIELD_ROWS:
         v = g.get(key)
         if key == "model_changelog" and v not in (None, ""):
             val: Any = _changelog_cell_html(v)
@@ -951,7 +949,7 @@ def format_compliance_preamble_html(
     evaluation: Optional[Mapping[str, Any]] = None,
     entries: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> str:
-    g = format_governance_eu13_html(governance)
+    g = format_governance_html(governance)
     e = format_evaluation_block_html(evaluation, entries=entries)
     return (
         f'<section class="dakma-compliance">{DOCUMENTATION_DISCLAIMER_HTML}\n'
@@ -1223,3 +1221,8 @@ def write_inference_report(
     inner = format_inference_result_html(result_dict)
     doc = wrap_html_document(title=title, subtitle="Single decision — dakma-sdk", body_inner=inner)
     return write_report_file(path, doc)
+
+
+# Backward-compatible aliases (deprecated names).
+format_governance_eu13_markdown = format_governance_markdown
+format_governance_eu13_html = format_governance_html

@@ -37,7 +37,7 @@ FEATURE_NAMES = list(load_breast_cancer().feature_names)
 
 dm = dakma.init(
     project="breast-cancer-mlp",
-    regulation="eu-ai-act",
+    regulation="internal-policy",
     risk_level="high",
 )
 

@@ -10,7 +10,7 @@ from dakma_sdk.core import DakmaClient
 
 @pytest.fixture
 def client() -> DakmaClient:
-    return DakmaClient(project="test-project", regulation="eu-ai-act", risk_level="high")
+    return DakmaClient(project="test-project", regulation="internal-policy", risk_level="high")
 
 
 class TestExtractScore:
@@ -87,16 +87,17 @@ class TestFeatureLineage:
 
 
 class TestRegulationFlags:
-    def test_eu_ai_act_counts_populated_governance_fields(self, client: DakmaClient) -> None:
+    def test_counts_populated_governance_fields(self, client: DakmaClient) -> None:
         client.register_governance(intended_use="demo", human_oversight="review")
         flags = client._regulation_flags()
-        assert flags[0] == "EU AI Act Art. 13 documentation fields: 2/5 populated"
-        assert "Documentation aid only" in flags[1]
-        assert "GDPR" not in " ".join(flags)
+        assert flags[0] == "Governance documentation fields: 2/5 populated"
+        assert flags[1] == "Policy context: internal-policy"
+        assert "Documentation aid only" in flags[2]
         assert "✓" not in " ".join(flags)
 
-    def test_custom_regulation_context(self) -> None:
-        client = DakmaClient(project="p", regulation="internal-policy", risk_level="low")
+    def test_empty_governance_still_reports_policy_context(self) -> None:
+        client = DakmaClient(project="p", regulation="custom-policy", risk_level="low")
         flags = client._regulation_flags()
-        assert flags[0] == "Regulation context: internal-policy"
-        assert "Documentation aid only" in flags[1]
+        assert flags[0] == "Governance documentation fields: 0/5 populated"
+        assert flags[1] == "Policy context: custom-policy"
+        assert "Documentation aid only" in flags[2]

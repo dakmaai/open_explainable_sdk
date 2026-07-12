@@ -46,7 +46,7 @@ class ExplainPayload:
     attribution_backend: Optional[str] = None
     #: RAM, CPU, and optional GPU stats for the explained inference (see :mod:`dakma_sdk.compute_usage`).
     compute_usage: Optional[Dict[str, Any]] = None
-    #: Art. 13-style documentation template fields; set via :meth:`dakma_sdk.core.DakmaClient.register_governance` (snapshotted at inference time).
+    #: Governance documentation template fields; set via :meth:`dakma_sdk.core.DakmaClient.register_governance` (snapshotted at inference time).
     governance: Optional[Dict[str, Any]] = None
     #: Test/hold-out metrics, split size, etc.; set via :meth:`dakma_sdk.core.DakmaClient.register_evaluation`.
     evaluation: Optional[Dict[str, Any]] = None

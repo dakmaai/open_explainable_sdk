@@ -9,7 +9,7 @@ from dakma_sdk.audit_format import (
     format_audit_log_markdown,
     format_compliance_preamble_markdown,
     format_evaluation_block_markdown,
-    format_governance_eu13_markdown,
+    format_governance_markdown,
     format_inference_result_html,
     format_inference_result_markdown,
     write_report_file,
@@ -42,7 +42,8 @@ def _sample_result_dict(*, with_governance: bool = True) -> dict:
             TopFactor(name="debt_ratio", value=0.4, impact=0.12, direction="up"),
         ],
         regulation_flags=[
-            "EU AI Act Art. 13 documentation fields: 3/5 populated",
+            "Governance documentation fields: 3/5 populated",
+            "Policy context: internal-policy",
             "Documentation aid only — not legal or compliance certification",
         ],
         governance=governance,
@@ -59,11 +60,13 @@ def _sample_result_dict(*, with_governance: bool = True) -> dict:
 
 class TestGovernanceAndEvaluationBlocks:
     def test_governance_template_heading_and_missing_fields(self) -> None:
-        md = format_governance_eu13_markdown({"intended_use": "Credit demo"})
-        assert "documentation template" in md.lower()
+        md = format_governance_markdown({"intended_use": "Credit demo"})
+        assert "governance documentation" in md.lower()
         assert "Intended use" in md
         assert "Credit demo" in md
         assert "not documented" in md
+        assert "EU AI Act" not in md
+        assert "GDPR" not in md
 
     def test_evaluation_block_renders_metrics_and_split(self) -> None:
         md = format_evaluation_block_markdown(
@@ -91,9 +94,9 @@ class TestGovernanceAndEvaluationBlocks:
             evaluation={"n_train": 1, "n_test": 1},
         )
         assert DOCUMENTATION_DISCLAIMER_MARKDOWN in md
-        assert "GDPR" in md  # mentioned only in disclaimer negation
-        assert "Art.13 ✓" not in md
-        assert "GDPR Art.22" not in md
+        assert "EU AI Act" not in md
+        assert "GDPR" not in md
+        assert "✓" not in md
 
 
 class TestInferenceReportFormatting:
@@ -104,6 +107,7 @@ class TestInferenceReportFormatting:
         assert "**Documentation status**" in md
         assert "Documentation aid only" in md
         assert "Regulation flags" not in md
+        assert "EU AI Act" not in md
 
     def test_html_escapes_user_governance_text(self, tmp_path) -> None:
         payload = _sample_result_dict()
@@ -111,6 +115,7 @@ class TestInferenceReportFormatting:
         html = format_inference_result_html(payload)
         assert "<script>" not in html
         assert "alert" in html
+        assert "EU AI Act" not in html
 
     def test_write_report_file_creates_utf8_file(self, tmp_path) -> None:
         path = write_report_file(tmp_path / "nested" / "report.md", "# Title\n\nbody")
@@ -144,3 +149,4 @@ class TestAuditLogFormatting:
         assert "monitoring" in md
         assert "data_tracking" in md
         assert DOCUMENTATION_DISCLAIMER_MARKDOWN in md
+        assert "EU AI Act" not in md

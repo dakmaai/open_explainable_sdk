@@ -24,7 +24,7 @@ CSV_PATH = Path(__file__).resolve().parent / "credit.csv"
 
 dm_c = dakma.init(
     project="credit-scoring-package",
-    regulation="eu-ai-act",
+    regulation="internal-policy",
     risk_level="high",
 )
 
