@@ -131,6 +131,35 @@ pytest -m smoke              # example scripts only
 
 CI runs `pytest` on Python 3.9–3.12 (see `.github/workflows/ci.yml`).
 
+## Publishing to PyPI
+
+Releases are published by [`.github/workflows/publish.yml`](.github/workflows/publish.yml) when you:
+
+- push a version tag (e.g. `v0.1.0`), or
+- publish a GitHub Release, or
+- run the workflow manually (**Actions → Publish to PyPI → Run workflow**).
+
+### One-time PyPI setup (trusted publishing)
+
+1. Create a PyPI account and project for **`dakma-sdk`** (if not already created).
+2. On PyPI → **Account settings → Publishing** → **Add a new pending publisher**:
+   - **PyPI project name:** `dakma-sdk`
+   - **Owner:** `dakmaai`
+   - **Repository name:** `open_explainable_sdk`
+   - **Workflow name:** `publish.yml`
+   - **Environment name:** `pypi`
+3. In GitHub → **Settings → Environments** → create environment **`pypi`** (optional approval rules recommended).
+4. Bump `version` in `pyproject.toml`, update `CHANGELOG.md`, commit, then:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow builds with `python -m build`, runs `twine check`, and uploads via [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (no long-lived API token in the repo).
+
+**Fallback:** set a repository secret `PYPI_API_TOKEN` if you prefer token-based upload instead of trusted publishing.
+
 ## Limitations
 
 - **Documentation aid only** — not legal advice or compliance certification.
