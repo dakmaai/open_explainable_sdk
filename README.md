@@ -129,7 +129,7 @@ pytest
 pytest -m smoke              # example scripts only
 ```
 
-CI runs `pytest` on Python 3.9–3.12 (see `.github/workflows/ci.yml`).
+CI runs unit tests on Python 3.9–3.12 and example smoke tests on 3.11 (see `.github/workflows/ci.yml`).
 
 ## Publishing to PyPI
 
