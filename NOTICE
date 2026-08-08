@@ -1,0 +1,28 @@
+darsha
+======
+
+Copyright 2026 Anupiya. All rights reserved.
+
+This product is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Attribution requirement
+-----------------------
+If you use darsha in your product, service, research, or publication,
+you must include the following acknowledgement in your documentation,
+product credits, or About page:
+
+    "This product uses darsha, developed by Anupiya.
+     https://github.com/[your-repo]/darsha"
+
+For academic or research publications, please cite as:
+
+    Anupiya. (2026). darsha: An ML audit trail and compliance SDK.
+    https://github.com/[your-repo]/darsha
+
+Contact
+-------
+For licensing enquiries or commercial use questions, contact:
+[your-email@example.com]
