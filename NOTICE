@@ -1,5 +1,5 @@
-darsha
-======
+dakma-sdk
+=========
 
 Copyright 2026 Anupiya. All rights reserved.
 
@@ -10,17 +10,17 @@ You may obtain a copy of the License at:
 
 Attribution requirement
 -----------------------
-If you use darsha in your product, service, research, or publication,
+If you use dakma-sdk in your product, service, research, or publication,
 you must include the following acknowledgement in your documentation,
 product credits, or About page:
 
-    "This product uses darsha, developed by Anupiya.
-     https://github.com/[your-repo]/darsha"
+    "This product uses dakma-sdk, developed by Anupiya.
+     https://github.com/dakmaai/open_explainable_sdk"
 
 For academic or research publications, please cite as:
 
-    Anupiya. (2026). darsha: An ML audit trail and compliance SDK.
-    https://github.com/[your-repo]/darsha
+    Anupiya. (2026). dakma-sdk: An ML audit trail and compliance SDK.
+    https://github.com/dakmaai/open_explainable_sdk
 
 Contact
 -------

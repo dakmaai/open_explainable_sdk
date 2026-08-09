@@ -5,13 +5,13 @@ from typing import Any, Dict
 import numpy as np
 import pytest
 
-import darsha
-from darsha_sdk.core import DarshaClient
+import dakma
+from dakma_sdk.core import DakmaClient
 
 
 @pytest.fixture
-def client() -> DarshaClient:
-    return darsha.init(project="test-project", regulation="eu-ai-act", risk_level="high")
+def client() -> DakmaClient:
+    return dakma.init(project="test-project", regulation="eu-ai-act", risk_level="high")
 
 
 class DummyModel:

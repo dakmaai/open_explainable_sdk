@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "darsha"
+name = "dakma-sdk"
 version = "0.1.0"
 description = "Explainability SDK for ML lifecycle tracking and auditable decisions."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-  { name = "Darsha SDK Team" }
+  { name = "Dakma SDK Team" }
 ]
 dependencies = [
   "numpy>=1.22",
@@ -37,7 +37,7 @@ dev = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["darsha", "darsha_sdk"]
+include = ["dakma", "dakma_sdk"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -39,7 +39,7 @@ def _ensure_torch_tensor(
 ) -> Any:
     torch, _ = _torch_nn()
     if torch is None:
-        raise RuntimeError("PyTorch is required for Integrated Gradients. Install torch (see darsha[dl]).")
+        raise RuntimeError("PyTorch is required for Integrated Gradients. Install torch (see dakma-sdk[dl]).")
     if isinstance(x, torch.Tensor):
         t = x
     else:

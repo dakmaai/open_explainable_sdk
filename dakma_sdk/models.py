@@ -203,7 +203,7 @@ class DecisionEvent:
         }
 
     def to_report_dict(self) -> Dict[str, Any]:
-        """Serialize for :mod:`darsha_sdk.audit_format` (legacy EnrichedResult layout)."""
+        """Serialize for :mod:`dakma_sdk.audit_format` (legacy EnrichedResult layout)."""
         explanation = asdict(self.explanation)
         # Report formatters historically read ``top_factors`` and ``attribution_backend``.
         explanation["top_factors"] = explanation.get("factors") or []

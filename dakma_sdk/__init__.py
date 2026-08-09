@@ -10,7 +10,7 @@ from .audit_format import (
     write_report_file,
 )
 from .compute_usage import ComputeUsageRecorder, ComputeUsageSnapshot
-from .core import DarshaClient, ModelHandle
+from .core import DakmaClient, ModelHandle
 from .models import (
     AuditEvent,
     Dataset,
@@ -35,7 +35,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 __all__ = [
     "init",
     "enable_logging",
-    "DarshaClient",
+    "DakmaClient",
     "ModelHandle",
     "ComputeUsageRecorder",
     "ComputeUsageSnapshot",
@@ -64,9 +64,9 @@ def init(
     project: str,
     regulation: str = "",
     risk_level: str = "",
-) -> DarshaClient:
+) -> DakmaClient:
     """Create a project-scoped client. DecisionEvents are produced via ``dk.model(...).explain()``."""
-    return DarshaClient(project=project, regulation=regulation, risk_level=risk_level)
+    return DakmaClient(project=project, regulation=regulation, risk_level=risk_level)
 
 
 def enable_logging(
@@ -75,9 +75,9 @@ def enable_logging(
     handler: Optional[logging.Handler] = None,
     fmt: str = "%(asctime)s %(levelname)s %(name)s: %(message)s",
 ) -> logging.Logger:
-    """Convenience helper to see Darsha's logs without configuring logging yourself.
+    """Convenience helper to see Dakma's logs without configuring logging yourself.
 
-    Attaches a single ``StreamHandler`` (stderr) to the ``darsha_sdk`` logger and sets
+    Attaches a single ``StreamHandler`` (stderr) to the ``dakma_sdk`` logger and sets
     its level. Intended for scripts, notebooks, and demos; production apps should
     configure the standard :mod:`logging` framework instead. Returns the package logger.
 

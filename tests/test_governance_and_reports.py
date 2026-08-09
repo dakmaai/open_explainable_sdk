@@ -6,7 +6,7 @@ import pytest
 
 pd = pytest.importorskip("pandas")
 
-from darsha_sdk.models import EnrichedResult
+from dakma_sdk.models import EnrichedResult
 from tests.conftest import DummyModel
 
 

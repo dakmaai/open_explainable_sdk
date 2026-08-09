@@ -1,10 +1,10 @@
-"""Convenience import: ``import darsha`` re-exports the public API from ``darsha_sdk``."""
+"""Convenience import: ``import dakma`` re-exports the public API from ``dakma_sdk``."""
 
-from darsha_sdk import (
+from dakma_sdk import (
     AuditEvent,
     ComputeUsageRecorder,
     ComputeUsageSnapshot,
-    DarshaClient,
+    DakmaClient,
     Dataset,
     Decision,
     DecisionEvent,
@@ -30,7 +30,7 @@ from darsha_sdk import (
 __all__ = [
     "init",
     "enable_logging",
-    "DarshaClient",
+    "DakmaClient",
     "ModelHandle",
     "ComputeUsageRecorder",
     "ComputeUsageSnapshot",

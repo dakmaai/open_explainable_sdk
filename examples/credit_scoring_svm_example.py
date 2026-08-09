@@ -8,7 +8,7 @@ Run from the ``examples/`` directory:
 
     cd examples && python credit_scoring_svm_example.py
 
-Requires optional dependencies: ``pip install "darsha[ml]"`` (pandas, scikit-learn, shap).
+Requires optional dependencies: ``pip install "dakma-sdk[ml]"`` (pandas, scikit-learn, shap).
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-import darsha
+import dakma
 
 
 CSV_PATH = Path(__file__).resolve().parent / "credit.csv"
 
-dm_svm = darsha.init(
+dm_svm = dakma.init(
     project="credit-scoring-svm",
     regulation="eu-ai-act",
     risk_level="high",

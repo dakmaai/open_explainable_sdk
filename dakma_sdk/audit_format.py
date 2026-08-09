@@ -91,7 +91,7 @@ def format_governance_eu13_markdown(governance: Optional[Mapping[str, Any]] = No
         "## EU AI Act (Art. 13) — documentation",
         "",
         "Transparency fields below support Art. 13-style disclosure. Use "
-        "``DarshaClient.register_governance(...)`` to fill them. Empty items are flagged in reports.",
+        "``DakmaClient.register_governance(...)`` to fill them. Empty items are flagged in reports.",
         "",
     ]
     rows: List[Sequence[Any]] = []
@@ -209,7 +209,7 @@ def format_evaluation_block_markdown(
     lines.append("### Test-set / hold-out metrics")
     lines.append(
         "Report metrics on **held-out** data (not training fit / training_score only). Use "
-        "``DarshaClient.register_evaluation(test_metrics={...}, ...)``."
+        "``DakmaClient.register_evaluation(test_metrics={...}, ...)``."
     )
     lines.append("")
 
@@ -389,7 +389,7 @@ def format_audit_entry_markdown(entry: Dict[str, Any], index: int) -> str:
 
 
 def _format_compute_usage_markdown(cu: Mapping[str, Any]) -> str:
-    """Markdown table for a :class:`~darsha_sdk.compute_usage.ComputeUsageSnapshot` dict."""
+    """Markdown table for a :class:`~dakma_sdk.compute_usage.ComputeUsageSnapshot` dict."""
     lines: List[str] = ["**Compute usage** (this process)"]
     w = cu.get("wall_time_ms")
     cpu = cu.get("process_cpu_time_ms")
@@ -577,7 +577,7 @@ def _html_table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
         tds = "".join(f"<td>{_html_esc(c)}</td>" for c in row)
         body_rows.append(f"<tr>{tds}</tr>")
     return (
-        '<table class="darsha-table">\n'
+        '<table class="dakma-table">\n'
         f"<thead><tr>{th}</tr></thead>\n"
         f"<tbody>\n{chr(10).join(body_rows)}\n</tbody>\n"
         "</table>"
@@ -594,7 +594,7 @@ def _html_table_two_col_doc_second_may_be_markup(rows: Sequence[Tuple[str, Any]]
             f"<tr><th>{html.escape(str(label), quote=False)}</th><td>{cell}</td></tr>"
         )
     return (
-        '<table class="darsha-table">\n<tbody>\n'
+        '<table class="dakma-table">\n<tbody>\n'
         + "\n".join(body_rows)
         + "\n</tbody>\n</table>"
     )
@@ -753,8 +753,8 @@ def _html_shap_global_chart(
         return ""
     note = ""
     if len(rows_all) > _MAX_SHAP_CHART_ROWS:
-        note = f'<p class="darsha-chart-note"><em>Showing top {_MAX_SHAP_CHART_ROWS} features.</em></p>'
-    return f'<figure class="darsha-shap-chart">{svg}</figure>{note}'
+        note = f'<p class="dakma-chart-note"><em>Showing top {_MAX_SHAP_CHART_ROWS} features.</em></p>'
+    return f'<figure class="dakma-shap-chart">{svg}</figure>{note}'
 
 
 def _html_shap_local_chart(
@@ -766,7 +766,7 @@ def _html_shap_local_chart(
     svg = _svg_signed_shap_bars(rows, axis_label=axis_label)
     if not svg:
         return ""
-    return f'<figure class="darsha-shap-chart">{svg}</figure>'
+    return f'<figure class="dakma-shap-chart">{svg}</figure>'
 
 
 def wrap_html_document(*, title: str, body_inner: str, subtitle: Optional[str] = None) -> str:
@@ -784,13 +784,13 @@ def wrap_html_document(*, title: str, body_inner: str, subtitle: Optional[str] =
     h2 {{ font-size: 1.1rem; margin-top: 0.5rem; }}
     h3 {{ font-size: 1.05rem; margin-top: 1.25rem; margin-bottom: 0.5rem; }}
     .subtitle {{ color: #555; margin-top: 0; font-size: 0.95rem; }}
-    table.darsha-table {{ border-collapse: collapse; margin: 0.75rem 0 1.25rem; width: 100%; max-width: 56rem; font-size: 0.9rem; }}
-    table.darsha-table th, table.darsha-table td {{ border: 1px solid #ccc; padding: 0.4rem 0.55rem; text-align: left; vertical-align: top; }}
-    table.darsha-table th {{ background: #f4f4f4; }}
+    table.dakma-table {{ border-collapse: collapse; margin: 0.75rem 0 1.25rem; width: 100%; max-width: 56rem; font-size: 0.9rem; }}
+    table.dakma-table th, table.dakma-table td {{ border: 1px solid #ccc; padding: 0.4rem 0.55rem; text-align: left; vertical-align: top; }}
+    table.dakma-table th {{ background: #f4f4f4; }}
     section.entry {{ margin-bottom: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 1rem; }}
-    figure.darsha-shap-chart {{ margin: 0.5rem 0 1rem; max-width: 56rem; }}
-    figure.darsha-shap-chart svg {{ display: block; width: 100%; height: auto; max-width: 560px; }}
-    p.darsha-chart-note {{ margin: 0.25rem 0 0.75rem; font-size: 0.88rem; color: #555; }}
+    figure.dakma-shap-chart {{ margin: 0.5rem 0 1rem; max-width: 56rem; }}
+    figure.dakma-shap-chart svg {{ display: block; width: 100%; height: auto; max-width: 560px; }}
+    p.dakma-chart-note {{ margin: 0.25rem 0 0.75rem; font-size: 0.88rem; color: #555; }}
   </style>
 </head>
 <body>
@@ -828,7 +828,7 @@ def format_governance_eu13_html(governance: Optional[Mapping[str, Any]] = None) 
     std_keys = {k for k, _ in _EU13_FIELD_ROWS}
     parts: List[str] = [
         _html_h2("EU AI Act (Art. 13) — documentation"),
-        _html_p_em("Use DarshaClient.register_governance(...) to fill these fields. Empty items are flagged."),
+        _html_p_em("Use DakmaClient.register_governance(...) to fill these fields. Empty items are flagged."),
     ]
     rows: List[Sequence[Any]] = []
     for key, label in _EU13_FIELD_ROWS:
@@ -872,7 +872,7 @@ def format_evaluation_block_html(
         ),
         _html_h3("Test-set / hold-out metrics"),
         _html_p_em(
-            "Report metrics on held-out data. Use DarshaClient.register_evaluation(test_metrics={...}, ...)."
+            "Report metrics on held-out data. Use DakmaClient.register_evaluation(test_metrics={...}, ...)."
         ),
     ]
     if test_metrics:
@@ -942,7 +942,7 @@ def format_compliance_preamble_html(
 ) -> str:
     g = format_governance_eu13_html(governance)
     e = format_evaluation_block_html(evaluation, entries=entries)
-    return f'<section class="darsha-compliance">{g}\n{e}\n<hr></section>\n\n'
+    return f'<section class="dakma-compliance">{g}\n{e}\n<hr></section>\n\n'
 
 
 def format_inference_result_html(
@@ -1158,7 +1158,7 @@ def format_audit_log_html(
     for i, entry in enumerate(entries, start=1):
         blocks.append(format_audit_entry_html(entry, i))
     body = "\n".join(blocks)
-    return wrap_html_document(title=title, subtitle="Generated by darsha", body_inner=body)
+    return wrap_html_document(title=title, subtitle="Generated by dakma-sdk", body_inner=body)
 
 
 def write_report_file(
@@ -1207,5 +1207,5 @@ def write_inference_report(
         md = f"## {title}\n\n" + format_inference_result_markdown(result_dict)
         return write_report_file(path, md)
     inner = format_inference_result_html(result_dict)
-    doc = wrap_html_document(title=title, subtitle="Single decision — darsha", body_inner=inner)
+    doc = wrap_html_document(title=title, subtitle="Single decision — dakma-sdk", body_inner=inner)
     return write_report_file(path, doc)

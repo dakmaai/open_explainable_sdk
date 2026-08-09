@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from darsha_sdk.compute_usage import ComputeUsageRecorder, ComputeUsageSnapshot
+from dakma_sdk.compute_usage import ComputeUsageRecorder, ComputeUsageSnapshot
 
 
 def test_compute_usage_recorder_records_wall_time():

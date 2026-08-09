@@ -1,8 +1,8 @@
 """
 Train a small PyTorch MLP on sklearn's breast cancer dataset and explain one row with
-Integrated Gradients via :meth:`darsha.DarshaClient.explain_integrated_gradients`.
+Integrated Gradients via :meth:`dakma.DakmaClient.explain_integrated_gradients`.
 
-Install: ``pip install "darsha[ml,dl]"`` (pandas, scikit-learn, torch, captum).
+Install: ``pip install "dakma-sdk[ml,dl]"`` (pandas, scikit-learn, torch, captum).
 
 Run: ``cd examples && python mlp_integrated_gradients_example.py``
 
@@ -31,11 +31,11 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-import darsha
+import dakma
 
 FEATURE_NAMES = list(load_breast_cancer().feature_names)
 
-dm = darsha.init(
+dm = dakma.init(
     project="breast-cancer-mlp",
     regulation="eu-ai-act",
     risk_level="high",

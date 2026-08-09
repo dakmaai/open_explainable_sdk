@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from darsha_sdk.models import FeatureImportance, TopFactor
+from dakma_sdk.models import FeatureImportance, TopFactor
 
 
 def test_top_factor_to_text():
@@ -20,7 +20,7 @@ def test_feature_importance_to_text_shap_and_ig():
 
 
 def test_decision_output_to_text():
-    from darsha_sdk.models import Decision, DecisionOutput
+    from dakma_sdk.models import Decision, DecisionOutput
 
     out = Decision(value="APPROVED", score=0.72, threshold=0.5)
     assert out.to_text() == "APPROVED (score: 0.72, threshold: 0.50)"
@@ -29,7 +29,7 @@ def test_decision_output_to_text():
 
 
 def test_core_objects_construct():
-    from darsha_sdk.models import AuditEvent, Dataset, Decision, Explanation, Model, Project
+    from dakma_sdk.models import AuditEvent, Dataset, Decision, Explanation, Model, Project
 
     project = Project(id="credit-scoring", regulation="eu-ai-act", risk_level="high")
     model = Model(id="credit-risk", version="3.2.1", framework="xgboost", model_hash="sha256:abc")

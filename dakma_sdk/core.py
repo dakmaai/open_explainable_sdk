@@ -93,7 +93,7 @@ class ModelHandle:
 
     def __init__(
         self,
-        client: "DarshaClient",
+        client: "DakmaClient",
         *,
         name: str,
         version: str,
@@ -181,7 +181,7 @@ class ModelHandle:
         )
 
 
-class DarshaClient:
+class DakmaClient:
     def __init__(
         self,
         project: str,
@@ -210,7 +210,7 @@ class DarshaClient:
         self._governance: Dict[str, Any] = {}
         self._evaluation: Dict[str, Any] = {}
         logger.debug(
-            "DarshaClient initialized (project=%s, regulation=%s, risk_level=%s)",
+            "DakmaClient initialized (project=%s, regulation=%s, risk_level=%s)",
             project,
             regulation,
             risk_level,
@@ -454,7 +454,7 @@ class DarshaClient:
         """Compute mean |SHAP| per feature over ``X_reference`` and attach it to later inference reports.
 
         Call after training with a background matrix (e.g. training or validation rows). Values are
-        included on :class:`~darsha_sdk.models.DecisionEvent` only when the same ``model`` object is
+        included on :class:`~dakma_sdk.models.DecisionEvent` only when the same ``model`` object is
         passed into the explained function. Requires optional dependencies ``shap`` and ``pandas``.
         """
         rows = self._global_shap_feature_importance(model, X_reference, max_samples=max_samples, top_k=top_k)
@@ -484,7 +484,7 @@ class DarshaClient:
         The wrapped function should return model outputs (logits or probabilities). Pass the trained
         ``model`` and input batch ``x`` (``torch.Tensor``) as arguments — convention:
         ``fn(model, x_tensor, ...)``. Requires ``torch``; optional ``captum`` for a fast IG
-        implementation (``pip install darsha[dl]``).
+        implementation (``pip install dakma-sdk[dl]``).
 
         Global feature rankings can be precomputed with
         :meth:`register_integrated_gradients_feature_importance` using the same ``model`` object.

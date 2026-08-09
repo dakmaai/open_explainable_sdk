@@ -16,13 +16,13 @@ from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
-import darsha
+import dakma
 
 
 # Default CSV next to this script (same folder as credit.csv)
 CSV_PATH = Path(__file__).resolve().parent / "credit.csv"
 
-dm_c = darsha.init(
+dm_c = dakma.init(
     project="credit-scoring-package",
     regulation="eu-ai-act",
     risk_level="high",
