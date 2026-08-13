@@ -101,3 +101,227 @@ class EnrichedResult:
         from .audit_format import write_inference_report
 
         return write_inference_report(asdict(self), path, title=title, format=format)
+
+
+@dataclass
+class Project:
+    """Workspace context shared by a family of models, datasets, and decisions."""
+
+    id: str
+    regulation: Optional[str] = None
+    risk_level: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Model:
+    """Model identity recorded for provenance on every decision event."""
+
+    id: str
+    version: str
+    framework: Optional[str] = None
+    model_hash: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Dataset:
+    """Dataset identity recorded for provenance (training / reference / evaluation)."""
+
+    id: str
+    version: str
+    schema_hash: Optional[str] = None
+    row_count: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Decision:
+    """Scored outcome of one AI decision event."""
+
+    value: str
+    score: float
+    threshold: float
+
+    @property
+    def label(self) -> str:
+        """Alias for :attr:`value`, matching :class:`DecisionOutput`."""
+        return self.value
+
+    def to_text(self) -> str:
+        return f"{self.value} (score: {self.score:.2f}, threshold: {self.threshold:.2f})"
+
+
+@dataclass
+class Explanation:
+    """Attribution and plain-language explanation contributing to a decision event."""
+
+    method: str
+    status: str
+    factors: List[TopFactor] = field(default_factory=list)
+    quality: Optional[Dict[str, Any]] = None
+    plain_language: str = ""
+    counterfactual: Optional[str] = None
+    #: Documentation status notes for reports (not legal or compliance certification).
+    regulation_flags: List[str] = field(default_factory=list)
+    feature_importance: List[FeatureImportance] = field(default_factory=list)
+    compute_usage: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    audit_trail_id: Optional[str] = None
+    model_version: Optional[str] = None
+    governance: Optional[Dict[str, Any]] = None
+    evaluation: Optional[Dict[str, Any]] = None
+
+    @property
+    def top_factors(self) -> List[TopFactor]:
+        """Alias for :attr:`factors`, matching :class:`ExplainPayload`."""
+        return self.factors
+
+    @property
+    def attribution_backend(self) -> Optional[str]:
+        """Alias for :attr:`method`, matching :class:`ExplainPayload`."""
+        return self.method
+
+
+@dataclass
+class AuditEvent:
+    """Persisted audit record; decisions are stored as ``type="decision"`` events."""
+
+    id: str
+    type: str
+    timestamp: str
+    model: Optional[Model] = None
+    dataset: Optional[Dataset] = None
+    decision: Optional[Decision] = None
+    explanation: Optional[Explanation] = None
+    governance: Optional[Dict[str, Any]] = None
+    project: Optional[Project] = None
+    evaluation: Optional[Dict[str, Any]] = None
+    monitoring: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DecisionEvent:
+    """One AI decision plus the evidence that produced it.
+
+    Returned by ``@model.explain()`` and ``@DakmaClient.explain()``. Provenance
+    (:class:`Model`, :class:`Dataset`), :class:`Explanation`, and governance all hang off
+    this event, and an :class:`AuditEvent` is written to the audit log for it.
+    """
+
+    decision: Decision
+    explanation: Explanation
+    audit_id: str
+    model: Optional[Model] = None
+    dataset: Optional[Dataset] = None
+    project: Optional[Project] = None
+    governance: Optional[Dict[str, Any]] = None
+    evaluation: Optional[Dict[str, Any]] = None
+    raw_output: Any = None
+
+    @property
+    def decision_output(self) -> Decision:
+        """Alias for :attr:`decision`, matching :class:`EnrichedResult`."""
+        return self.decision
+
+    @property
+    def explain(self) -> Explanation:
+        """Alias for :attr:`explanation`, matching :class:`EnrichedResult`."""
+        return self.explanation
+
+    def to_audit_event(self, *, timestamp: str, event_type: str = "decision") -> AuditEvent:
+        return AuditEvent(
+            id=self.audit_id,
+            type=event_type,
+            timestamp=timestamp,
+            model=self.model,
+            dataset=self.dataset,
+            decision=self.decision,
+            explanation=self.explanation,
+            governance=self.governance,
+            project=self.project,
+            evaluation=self.evaluation,
+            metadata={"raw_output": _reportable(self.raw_output)},
+        )
+
+    def as_dict(self) -> Dict[str, Any]:
+        fi = self.explanation.feature_importance
+        factors = self.explanation.factors
+        return {
+            "decision": self.decision.to_text(),
+            "audit_trail_id": self.audit_id,
+            "model_version": self.explanation.model_version or "",
+            "top_factor[0]": factors[0].to_text() if len(factors) > 0 else "N/A",
+            "top_factor[1]": factors[1].to_text() if len(factors) > 1 else "N/A",
+            "top_factor[2]": factors[2].to_text() if len(factors) > 2 else "N/A",
+            "feature_importance[0]": fi[0].to_text() if len(fi) > 0 else "N/A",
+            "feature_importance[1]": fi[1].to_text() if len(fi) > 1 else "N/A",
+            "feature_importance[2]": fi[2].to_text() if len(fi) > 2 else "N/A",
+            "counterfactual": self.explanation.counterfactual or "N/A",
+            "plain_language": self.explanation.plain_language,
+            "regulation_flags": " ".join(self.explanation.regulation_flags),
+        }
+
+    def to_report_dict(self) -> Dict[str, Any]:
+        """Serialize into the layout :mod:`dakma_sdk.audit_format` expects."""
+        explanation = asdict(self.explanation)
+        explanation["top_factors"] = explanation.get("factors") or []
+        explanation["attribution_backend"] = self.explanation.method
+        explanation["audit_trail_id"] = self.audit_id
+        return {
+            "decision": self.raw_output,
+            "decision_output": {
+                "label": self.decision.value,
+                "value": self.decision.value,
+                "score": self.decision.score,
+                "threshold": self.decision.threshold,
+            },
+            "explain": explanation,
+            "explanation": explanation,
+            "audit_id": self.audit_id,
+            "model": asdict(self.model) if self.model else None,
+            "dataset": asdict(self.dataset) if self.dataset else None,
+            "project": asdict(self.project) if self.project else None,
+            "governance": self.governance,
+            "evaluation": self.evaluation,
+        }
+
+    def as_markdown_table(self) -> str:
+        from .audit_format import format_inference_result_markdown
+
+        return format_inference_result_markdown(self.to_report_dict())
+
+    def write_report(
+        self,
+        path: Union[str, Path],
+        *,
+        title: str = "Decision report",
+        format: Literal["markdown", "html"] = "markdown",
+    ) -> Path:
+        """Write this decision event to a downloadable ``.md`` or ``.html`` file."""
+        from .audit_format import write_inference_report
+
+        return write_inference_report(self.to_report_dict(), path, title=title, format=format)
+
+
+def _reportable(value: Any) -> Any:
+    """Convert raw model output into something safe to store in an audit record."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        import numpy as np
+
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+    except Exception:
+        pass
+    try:
+        return repr(value)[:500]
+    except Exception:
+        return "<unrepresentable>"

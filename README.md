@@ -55,6 +55,49 @@ The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_re
 
 **Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
 
+## The decision event
+
+The **decision event** is the SDK's fundamental object. Every explained inference produces one, and
+provenance, explanation, and governance all hang off it:
+
+```
+Project → AI Decision Event → AuditEvent
+             ├── Provenance   (Model, Dataset)
+             ├── Explanation  (method, status, factors, quality)
+             └── Governance   (documentation fields, evaluation)
+```
+
+Register a model, decorate inference, and read the event:
+
+```python
+import dakma
+
+dk = dakma.init(project="credit-scoring")
+
+dk.dataset(id="credit-training", version="2026-08", row_count=1823921)
+model = dk.model(
+    name="credit-risk",
+    version="3.2.1",
+    artifact=classifier,   # lets SHAP and the model hash resolve without a model argument
+)
+
+@model.explain()
+def predict(x):
+    return classifier.predict_proba(x)
+
+result = predict(applicant)
+print(result.decision)      # Decision(value="DECLINED", score=0.421, threshold=0.5)
+print(result.explanation)   # Explanation(method="shap", status="success", factors=[...])
+print(result.audit_id)
+```
+
+The six core objects are `Project`, `Model`, `Dataset`, `Decision`, `Explanation`, and `AuditEvent`;
+`DecisionEvent` is the runtime aggregate returned to you, and an `AuditEvent` of
+`type="decision"` is appended to the audit log for each one.
+
+`regulation` and `risk_level` on `init` remain available and are recorded on the project and in
+report documentation blocks.
+
 ## Quickstart (tabular ML)
 
 Requires the **`[ml]`** extra (XGBoost, SHAP, pandas):
@@ -62,6 +105,9 @@ Requires the **`[ml]`** extra (XGBoost, SHAP, pandas):
 ```bash
 pip install "dakma-sdk[ml]"
 ```
+
+Decorating with `DakmaClient.explain` also returns a decision event, and keeps the
+`decision_output` / `explain` names used by earlier releases:
 
 ```python
 import dakma

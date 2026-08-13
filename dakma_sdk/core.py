@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
+import pickle
 import re
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
@@ -12,7 +13,18 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 import numpy as np
 
 from .compute_usage import ComputeUsageRecorder
-from .models import DecisionOutput, EnrichedResult, ExplainPayload, FeatureImportance, TopFactor
+from .models import (
+    AuditEvent,
+    Dataset,
+    Decision,
+    DecisionEvent,
+    DecisionOutput,
+    Explanation,
+    FeatureImportance,
+    Model,
+    Project,
+    TopFactor,
+)
 
 
 def _safe_import_pandas():
@@ -44,21 +56,241 @@ _GOVERNANCE_FIELD_KEYS = (
 _DOCUMENTATION_AID_NOTE = "Documentation aid only — not legal or compliance certification"
 
 
+def _sha256_hex(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _hash_model_artifact(artifact: Any) -> Optional[str]:
+    if artifact is None:
+        return None
+    try:
+        return _sha256_hex(pickle.dumps(artifact, protocol=pickle.HIGHEST_PROTOCOL))
+    except Exception:
+        try:
+            return _sha256_hex(repr(artifact).encode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+
+def _infer_framework(artifact: Any) -> Optional[str]:
+    if artifact is None:
+        return None
+    try:
+        import torch.nn as nn  # type: ignore
+
+        if isinstance(artifact, nn.Module):
+            return "pytorch"
+    except Exception:
+        pass
+    module = getattr(type(artifact), "__module__", "") or ""
+    name = type(artifact).__name__.lower()
+    if "xgboost" in module or name.startswith("xgb"):
+        return "xgboost"
+    if "sklearn" in module or "scikit" in module:
+        return "sklearn"
+    if module:
+        return module.split(".", 1)[0]
+    return None
+
+
+class ModelHandle:
+    """A registered model within a project, used to produce decision events.
+
+    Created by :meth:`DakmaClient.model`. Decorating inference with :meth:`explain`
+    records the model identity on every resulting :class:`~dakma_sdk.models.DecisionEvent`.
+    """
+
+    def __init__(
+        self,
+        client: "DakmaClient",
+        *,
+        name: str,
+        version: str,
+        framework: Optional[str] = None,
+        model_hash: Optional[str] = None,
+        artifact: Any = None,
+        dataset: Optional[Dataset] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._client = client
+        self._artifact = artifact
+        self._dataset = dataset
+        self.spec = Model(
+            id=name,
+            version=version,
+            framework=framework or _infer_framework(artifact),
+            model_hash=model_hash or _hash_model_artifact(artifact),
+            metadata=dict(metadata or {}),
+        )
+
+    @property
+    def id(self) -> str:
+        return self.spec.id
+
+    @property
+    def version(self) -> str:
+        return self.spec.version
+
+    @property
+    def artifact(self) -> Any:
+        return self._artifact
+
+    @property
+    def dataset(self) -> Optional[Dataset]:
+        return self._dataset
+
+    def bind(self, artifact: Any, *, rehash: bool = True) -> "ModelHandle":
+        """Attach the runtime model object used for scoring and attribution."""
+        self._artifact = artifact
+        if self.spec.framework is None:
+            self.spec.framework = _infer_framework(artifact)
+        if rehash or not self.spec.model_hash:
+            self.spec.model_hash = _hash_model_artifact(artifact)
+        return self
+
+    def use_dataset(self, dataset: Dataset) -> "ModelHandle":
+        """Record ``dataset`` as the provenance for this model's decisions."""
+        self._dataset = dataset
+        return self
+
+    def explain(
+        self,
+        *,
+        counterfactual: bool = False,
+        threshold: float = 0.5,
+        top_k: int = 3,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Decorate inference so it returns a :class:`~dakma_sdk.models.DecisionEvent` (SHAP)."""
+        return self._client._explain_decorator(
+            self,
+            backend="shap",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+        )
+
+    def explain_integrated_gradients(
+        self,
+        *,
+        counterfactual: bool = False,
+        threshold: float = 0.5,
+        top_k: int = 3,
+        n_steps: int = 32,
+        feature_names: Optional[Sequence[str]] = None,
+        baseline: Any = None,
+        target_class: Optional[int] = None,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Decorate inference so it returns a decision event explained with Integrated Gradients."""
+        return self._client._explain_decorator(
+            self,
+            backend="integrated_gradients",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            feature_names=feature_names,
+            baseline=baseline,
+            target_class=target_class,
+        )
+
+
 class DakmaClient:
-    def __init__(self, project: str, regulation: str, risk_level: str):
+    def __init__(self, project: str, regulation: str = "", risk_level: str = ""):
         self.project = project
         self.regulation = regulation
         self.risk_level = risk_level
+        self.project_info = Project(
+            id=project,
+            regulation=regulation or None,
+            risk_level=risk_level or None,
+        )
         self._audit_log: List[Dict[str, Any]] = []
         self._feature_lineage: Dict[str, str] = {}
         self._data_history: List[Dict[str, Any]] = []
         self._training_history: List[Dict[str, Any]] = []
+        self._models: Dict[str, ModelHandle] = {}
+        self._datasets: Dict[str, Dataset] = {}
+        self._default_dataset: Optional[Dataset] = None
         self._shap_fi_model_id: Optional[int] = None
         self._shap_fi_rows: List[FeatureImportance] = []
         self._ig_fi_model_id: Optional[int] = None
         self._ig_fi_rows: List[FeatureImportance] = []
         self._governance: Dict[str, Any] = {}
         self._evaluation: Dict[str, Any] = {}
+
+    def model(
+        self,
+        name: str,
+        version: str = "0",
+        *,
+        framework: Optional[str] = None,
+        model_hash: Optional[str] = None,
+        artifact: Any = None,
+        dataset: Optional[Union[str, Dataset]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ModelHandle:
+        """Register a model and return a handle whose ``explain`` produces decision events.
+
+        Pass ``artifact`` (the trained estimator) when the decorated function does not take
+        the model as an argument, so attributions and the model hash can still be computed.
+        """
+        if isinstance(dataset, Dataset):
+            bound_dataset: Optional[Dataset] = dataset
+        elif isinstance(dataset, str):
+            bound_dataset = self._datasets.get(dataset)
+        else:
+            bound_dataset = self._default_dataset
+
+        handle = ModelHandle(
+            self,
+            name=name,
+            version=version,
+            framework=framework,
+            model_hash=model_hash,
+            artifact=artifact,
+            dataset=bound_dataset,
+            metadata=metadata,
+        )
+        self._models[f"{name}@{version}"] = handle
+        return handle
+
+    def dataset(
+        self,
+        id: str,
+        version: str = "0",
+        *,
+        schema_hash: Optional[str] = None,
+        row_count: Optional[int] = None,
+        data: Any = None,
+        set_default: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dataset:
+        """Register dataset identity for provenance on later decision events.
+
+        Passing ``data`` (a DataFrame, mapping, or array) fills in ``row_count`` and a
+        column/dtype ``schema_hash`` when they are not given explicitly.
+        """
+        rows = row_count
+        digest = schema_hash
+        if data is not None:
+            if rows is None:
+                try:
+                    rows = int(len(data))
+                except Exception:
+                    rows = None
+            if digest is None:
+                digest = self._schema_hash(data)
+        ds = Dataset(
+            id=id,
+            version=version,
+            schema_hash=digest,
+            row_count=rows,
+            metadata=dict(metadata or {}),
+        )
+        self._datasets[id] = ds
+        if set_default:
+            self._default_dataset = ds
+        return ds
 
     def track_data(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(fn)
@@ -181,64 +413,18 @@ class DakmaClient:
         counterfactual: bool = False,
         threshold: float = 0.5,
         top_k: int = 3,
-    ) -> Callable[[Callable[..., Any]], Callable[..., EnrichedResult]]:
-        def decorator(fn: Callable[..., Any]) -> Callable[..., EnrichedResult]:
-            @functools.wraps(fn)
-            def wrapper(*args: Any, **kwargs: Any) -> EnrichedResult:
-                with ComputeUsageRecorder() as rec:
-                    raw_decision = fn(*args, **kwargs)
-                    model = self._first_model(args, kwargs)
-                    row = self._first_dataframe_or_mapping(args, kwargs)
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Decorate inference so it returns a :class:`~dakma_sdk.models.DecisionEvent` (SHAP).
 
-                    score = self._extract_score(raw_decision)
-                    decision_output = self._to_decision_output(score, threshold)
-                    top_factors = self._top_factors(model, row, top_k=top_k)
-                    counterfactual_text = self._counterfactual(top_factors) if counterfactual else None
-
-                    fi_rows: List[FeatureImportance] = []
-                    if self._shap_fi_model_id is not None and model is not None and id(model) == self._shap_fi_model_id:
-                        fi_rows = list(self._shap_fi_rows)
-
-                compute_usage = rec.usage
-
-                explain_payload = ExplainPayload(
-                    audit_trail_id=self._audit_trail_id(),
-                    model_version=self._model_version(model),
-                    plain_language=self._plain_language(decision_output, top_factors),
-                    top_factors=top_factors,
-                    counterfactual=counterfactual_text,
-                    regulation_flags=self._regulation_flags(),
-                    metadata={
-                        "project": self.project,
-                        "regulation": self.regulation,
-                        "risk_level": self.risk_level,
-                        "feature_lineage": self._feature_lineage,
-                    },
-                    feature_importance=fi_rows,
-                    attribution_backend="shap",
-                    compute_usage=compute_usage,
-                    governance=(dict(self._governance) if self._governance else None),
-                    evaluation=(dict(self._evaluation) if self._evaluation else None),
-                )
-                result = EnrichedResult(
-                    decision=raw_decision,
-                    explain=explain_payload,
-                    decision_output=decision_output,
-                )
-
-                self._audit_log.append(
-                    {
-                        "type": "inference_explain",
-                        "timestamp": self._utc_now(),
-                        "function": fn.__name__,
-                        "result": asdict(result),
-                    }
-                )
-                return result
-
-            return wrapper
-
-        return decorator
+        Use :meth:`model` first when you want typed model and dataset provenance on the event.
+        """
+        return self._explain_decorator(
+            None,
+            backend="shap",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+        )
 
     def register_shap_feature_importance(
         self,
@@ -251,7 +437,7 @@ class DakmaClient:
         """Compute mean |SHAP| per feature over ``X_reference`` and attach it to later inference reports.
 
         Call after training with a background matrix (e.g. training or validation rows). Values are
-        included on :class:`~dakma_sdk.models.EnrichedResult` only when the same ``model`` object is
+        included on :class:`~dakma_sdk.models.DecisionEvent` only when the same ``model`` object is
         passed into the explained function. Requires optional dependencies ``shap`` and ``pandas``.
         """
         rows = self._global_shap_feature_importance(model, X_reference, max_samples=max_samples, top_k=top_k)
@@ -268,7 +454,7 @@ class DakmaClient:
         feature_names: Optional[Sequence[str]] = None,
         baseline: Any = None,
         target_class: Optional[int] = None,
-    ) -> Callable[[Callable[..., Any]], Callable[..., EnrichedResult]]:
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
         """Explain inference using Integrated Gradients (PyTorch ``nn.Module`` + tensor inputs).
 
         The wrapped function should return model outputs (logits or probabilities). Pass the trained
@@ -279,71 +465,175 @@ class DakmaClient:
         Global feature rankings can be precomputed with
         :meth:`register_integrated_gradients_feature_importance` using the same ``model`` object.
         """
-        def decorator(fn: Callable[..., Any]) -> Callable[..., EnrichedResult]:
+        return self._explain_decorator(
+            None,
+            backend="integrated_gradients",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            feature_names=feature_names,
+            baseline=baseline,
+            target_class=target_class,
+        )
+
+    def _explain_decorator(
+        self,
+        handle: Optional[ModelHandle],
+        *,
+        backend: str,
+        counterfactual: bool = False,
+        threshold: float = 0.5,
+        top_k: int = 3,
+        n_steps: int = 32,
+        feature_names: Optional[Sequence[str]] = None,
+        baseline: Any = None,
+        target_class: Optional[int] = None,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        def decorator(fn: Callable[..., Any]) -> Callable[..., DecisionEvent]:
             @functools.wraps(fn)
-            def wrapper(*args: Any, **kwargs: Any) -> EnrichedResult:
+            def wrapper(*args: Any, **kwargs: Any) -> DecisionEvent:
+                bound = handle.artifact if handle is not None else None
                 with ComputeUsageRecorder() as rec:
                     raw_decision = fn(*args, **kwargs)
-                    model = self._first_pytorch_module(args, kwargs)
-                    x_tensor = self._first_torch_tensor(args, kwargs)
 
-                    score = self._extract_score(raw_decision)
-                    decision_output = self._to_decision_output(score, threshold)
-                    top_factors = self._top_factors_integrated_gradients(
-                        model,
-                        x_tensor,
-                        feature_names=feature_names,
-                        top_k=top_k,
-                        n_steps=n_steps,
-                        baseline=baseline,
-                        target_class=target_class,
-                    )
-                    counterfactual_text = self._counterfactual(top_factors) if counterfactual else None
+                    if backend == "integrated_gradients":
+                        model = bound if bound is not None else self._first_pytorch_module(args, kwargs)
+                        top_factors = self._top_factors_integrated_gradients(
+                            model,
+                            self._first_torch_tensor(args, kwargs),
+                            feature_names=feature_names,
+                            top_k=top_k,
+                            n_steps=n_steps,
+                            baseline=baseline,
+                            target_class=target_class,
+                        )
+                        cached_id, cached_rows = self._ig_fi_model_id, self._ig_fi_rows
+                    else:
+                        model = bound if bound is not None else self._first_model(args, kwargs)
+                        row = self._first_dataframe_or_mapping(args, kwargs)
+                        top_factors = self._top_factors(model, row, top_k=top_k)
+                        cached_id, cached_rows = self._shap_fi_model_id, self._shap_fi_rows
 
                     fi_rows: List[FeatureImportance] = []
-                    if self._ig_fi_model_id is not None and model is not None and id(model) == self._ig_fi_model_id:
-                        fi_rows = list(self._ig_fi_rows)
+                    if cached_id is not None and model is not None and id(model) == cached_id:
+                        fi_rows = list(cached_rows)
 
-                compute_usage = rec.usage
+                    decision = self._to_decision(self._extract_score(raw_decision), threshold)
+                    counterfactual_text = self._counterfactual(top_factors) if counterfactual else None
 
-                explain_payload = ExplainPayload(
-                    audit_trail_id=self._audit_trail_id(),
-                    model_version=self._model_version(model),
-                    plain_language=self._plain_language(decision_output, top_factors),
-                    top_factors=top_factors,
-                    counterfactual=counterfactual_text,
-                    regulation_flags=self._regulation_flags(),
-                    metadata={
-                        "project": self.project,
-                        "regulation": self.regulation,
-                        "risk_level": self.risk_level,
-                        "feature_lineage": self._feature_lineage,
-                    },
+                event = self._build_decision_event(
+                    handle=handle,
+                    model=model,
+                    decision=decision,
+                    factors=top_factors,
+                    method=backend,
+                    counterfactual_text=counterfactual_text,
                     feature_importance=fi_rows,
-                    attribution_backend="integrated_gradients",
-                    compute_usage=compute_usage,
-                    governance=(dict(self._governance) if self._governance else None),
-                    evaluation=(dict(self._evaluation) if self._evaluation else None),
+                    compute_usage=rec.usage,
+                    raw_output=raw_decision,
                 )
-                result = EnrichedResult(
-                    decision=raw_decision,
-                    explain=explain_payload,
-                    decision_output=decision_output,
-                )
-
-                self._audit_log.append(
-                    {
-                        "type": "inference_explain",
-                        "timestamp": self._utc_now(),
-                        "function": fn.__name__,
-                        "result": asdict(result),
-                    }
-                )
-                return result
+                self._record_decision_event(event, function_name=fn.__name__)
+                return event
 
             return wrapper
 
         return decorator
+
+    def _build_decision_event(
+        self,
+        *,
+        handle: Optional[ModelHandle],
+        model: Any,
+        decision: Decision,
+        factors: List[TopFactor],
+        method: str,
+        counterfactual_text: Optional[str],
+        feature_importance: List[FeatureImportance],
+        compute_usage: Optional[Dict[str, Any]],
+        raw_output: Any,
+    ) -> DecisionEvent:
+        audit_id = self._audit_trail_id()
+        governance = dict(self._governance) if self._governance else None
+        evaluation = dict(self._evaluation) if self._evaluation else None
+
+        if handle is not None:
+            spec: Model = handle.spec
+            model_version = f"{spec.id}:{spec.version}"
+            dataset = handle.dataset or self._default_dataset
+        else:
+            spec = Model(
+                id=self.project,
+                version=self._model_version(model),
+                framework=_infer_framework(model),
+                model_hash=_hash_model_artifact(model),
+            )
+            model_version = spec.version
+            dataset = self._default_dataset
+
+        explanation = Explanation(
+            method=method,
+            status="success" if factors else "degraded",
+            factors=factors,
+            quality={
+                "factor_count": len(factors),
+                "has_global_importance": bool(feature_importance),
+                "method": method,
+            },
+            plain_language=self._plain_language(decision, factors),
+            counterfactual=counterfactual_text,
+            regulation_flags=self._regulation_flags(),
+            feature_importance=feature_importance,
+            compute_usage=compute_usage,
+            metadata={
+                "project": self.project,
+                "regulation": self.regulation,
+                "risk_level": self.risk_level,
+                "feature_lineage": dict(self._feature_lineage),
+            },
+            audit_trail_id=audit_id,
+            model_version=model_version,
+            governance=governance,
+            evaluation=evaluation,
+        )
+        return DecisionEvent(
+            decision=decision,
+            explanation=explanation,
+            audit_id=audit_id,
+            model=spec,
+            dataset=dataset,
+            project=self.project_info,
+            governance=governance,
+            evaluation=evaluation,
+            raw_output=raw_output,
+        )
+
+    def _record_decision_event(self, event: DecisionEvent, *, function_name: str) -> AuditEvent:
+        timestamp = self._utc_now()
+        audit_event = event.to_audit_event(timestamp=timestamp)
+        self._audit_log.append(
+            {
+                "type": "inference_explain",
+                "timestamp": timestamp,
+                "function": function_name,
+                "result": event.to_report_dict(),
+                "audit_event": audit_event.as_dict(),
+            }
+        )
+        return audit_event
+
+    def _schema_hash(self, data: Any) -> Optional[str]:
+        pd = _safe_import_pandas()
+        try:
+            if pd is not None and isinstance(data, pd.DataFrame):
+                return _sha256_hex("|".join(f"{c}:{data[c].dtype}" for c in data.columns).encode("utf-8"))
+            if isinstance(data, dict):
+                payload = "|".join(f"{k}:{type(v).__name__}" for k, v in sorted(data.items()))
+                return _sha256_hex(payload.encode("utf-8"))
+            arr = np.asarray(data)
+            return _sha256_hex(f"ndarray:{arr.shape}:{arr.dtype}".encode("utf-8"))
+        except Exception:
+            return None
 
     def register_integrated_gradients_feature_importance(
         self,
@@ -586,6 +876,11 @@ class DakmaClient:
         if score >= threshold:
             return DecisionOutput(label="APPROVED", score=score, threshold=threshold)
         return DecisionOutput(label="DECLINED", score=score, threshold=threshold)
+
+    @staticmethod
+    def _to_decision(score: float, threshold: float) -> Decision:
+        value = "APPROVED" if score >= threshold else "DECLINED"
+        return Decision(value=value, score=score, threshold=threshold)
 
     def _top_factors(self, model: Any, row: Any, top_k: int = 3) -> List[TopFactor]:
         factors = self._top_factors_shap(model, row)
@@ -839,7 +1134,7 @@ class DakmaClient:
             suffix = f"xgb-{n_estimators}-d{max_depth}"
         return f"{self.project} / {suffix}"
 
-    def _plain_language(self, decision: DecisionOutput, factors: List[TopFactor]) -> str:
+    def _plain_language(self, decision: Union[Decision, DecisionOutput], factors: List[TopFactor]) -> str:
         if not factors:
             return f"{decision.label.title()}. Decision generated by model score and threshold."
         reason = factors[0]
@@ -855,11 +1150,11 @@ class DakmaClient:
             1 for key in _GOVERNANCE_FIELD_KEYS if self._governance.get(key) not in (None, "")
         )
         total = len(_GOVERNANCE_FIELD_KEYS)
-        return [
-            f"Governance documentation fields: {populated}/{total} populated",
-            f"Policy context: {self.regulation}",
-            _DOCUMENTATION_AID_NOTE,
-        ]
+        notes = [f"Governance documentation fields: {populated}/{total} populated"]
+        if self.regulation:
+            notes.append(f"Policy context: {self.regulation}")
+        notes.append(_DOCUMENTATION_AID_NOTE)
+        return notes
 
     @staticmethod
     def _audit_trail_id() -> str:
