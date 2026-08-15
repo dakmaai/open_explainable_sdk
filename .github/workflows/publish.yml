@@ -39,3 +39,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # A tag push and its GitHub release both trigger this workflow, so the
+          # second run would otherwise fail on an already-published version.
+          skip-existing: true
