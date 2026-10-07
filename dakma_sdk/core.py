@@ -23,6 +23,7 @@ from .models import (
     FeatureImportance,
     Model,
     Project,
+    TokenAttribution,
     TopFactor,
 )
 
@@ -191,6 +192,35 @@ class ModelHandle:
             feature_names=feature_names,
             baseline=baseline,
             target_class=target_class,
+        )
+
+    def explain_text(
+        self,
+        *,
+        tokens: Any = None,
+        tokenizer: Any = None,
+        embedding_layer: Any = None,
+        threshold: float = 0.5,
+        top_k: int = 5,
+        n_steps: int = 32,
+        baseline: Any = None,
+        target_class: Optional[int] = None,
+        internal_batch_size: Optional[int] = 1,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Decorate text inference so each token gets its own Integrated Gradients impact."""
+        return self._client._explain_decorator(
+            self,
+            backend="integrated_gradients",
+            input_kind="text",
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            baseline=baseline,
+            target_class=target_class,
+            tokens=tokens,
+            tokenizer=tokenizer,
+            embedding_layer=embedding_layer,
+            internal_batch_size=internal_batch_size,
         )
 
 
@@ -477,6 +507,52 @@ class DakmaClient:
             target_class=target_class,
         )
 
+    def explain_text(
+        self,
+        *,
+        tokens: Any = None,
+        tokenizer: Any = None,
+        embedding_layer: Any = None,
+        threshold: float = 0.5,
+        top_k: int = 5,
+        n_steps: int = 32,
+        baseline: Any = None,
+        target_class: Optional[int] = None,
+        internal_batch_size: Optional[int] = 1,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Explain text classification with one Integrated Gradients impact per token.
+
+        The wrapped function receives the model and a tensor of token ids shaped
+        ``(1, seq_len)`` — convention: ``fn(model, ids)`` — and returns logits or
+        probabilities. Attributions are taken over word embeddings, so the model only needs
+        to contain an ``nn.Embedding`` (pass ``embedding_layer`` when it has several).
+
+        Impacts explain the score the decision was made on — the last model output, as read by
+        the threshold — so a positive impact pushed the text towards ``APPROVED``; pass
+        ``target_class`` to attribute a different class instead.
+
+        Supply display tokens with ``tokens`` (a list, or a callable taking the id tensor) or
+        ``tokenizer`` (anything exposing ``convert_ids_to_tokens``). The resulting
+        :class:`~dakma_sdk.models.DecisionEvent` carries per-token impacts on
+        ``explanation.text_attributions``, renders them through
+        :meth:`~dakma_sdk.models.DecisionEvent.highlighted_text`, and shades the text in
+        reports. Requires ``torch``; ``captum`` is used when installed (``pip install dakma-sdk[dl]``).
+        """
+        return self._explain_decorator(
+            None,
+            backend="integrated_gradients",
+            input_kind="text",
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            baseline=baseline,
+            target_class=target_class,
+            tokens=tokens,
+            tokenizer=tokenizer,
+            embedding_layer=embedding_layer,
+            internal_batch_size=internal_batch_size,
+        )
+
     def _explain_decorator(
         self,
         handle: Optional[ModelHandle],
@@ -489,15 +565,41 @@ class DakmaClient:
         feature_names: Optional[Sequence[str]] = None,
         baseline: Any = None,
         target_class: Optional[int] = None,
+        input_kind: str = "tabular",
+        tokens: Any = None,
+        tokenizer: Any = None,
+        embedding_layer: Any = None,
+        internal_batch_size: Optional[int] = 1,
     ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
         def decorator(fn: Callable[..., Any]) -> Callable[..., DecisionEvent]:
             @functools.wraps(fn)
             def wrapper(*args: Any, **kwargs: Any) -> DecisionEvent:
                 bound = handle.artifact if handle is not None else None
+                token_attrs: List[TokenAttribution] = []
+                attribution_error: Optional[str] = None
                 with ComputeUsageRecorder() as rec:
                     raw_decision = fn(*args, **kwargs)
 
-                    if backend == "integrated_gradients":
+                    if input_kind == "text":
+                        model = bound if bound is not None else self._first_pytorch_module(args, kwargs)
+                        token_attrs, attribution_error = self._token_attributions(
+                            model,
+                            self._first_token_id_tensor(args, kwargs),
+                            tokens=tokens,
+                            tokenizer=tokenizer,
+                            embedding_layer=embedding_layer,
+                            n_steps=n_steps,
+                            baseline=baseline,
+                            target_class=(
+                                target_class
+                                if target_class is not None
+                                else self._score_class_index(raw_decision)
+                            ),
+                            internal_batch_size=internal_batch_size,
+                        )
+                        top_factors = self._token_top_factors(token_attrs, top_k=top_k)
+                        cached_id, cached_rows = None, []
+                    elif backend == "integrated_gradients":
                         model = bound if bound is not None else self._first_pytorch_module(args, kwargs)
                         top_factors = self._top_factors_integrated_gradients(
                             model,
@@ -532,6 +634,9 @@ class DakmaClient:
                     feature_importance=fi_rows,
                     compute_usage=rec.usage,
                     raw_output=raw_decision,
+                    input_kind=input_kind,
+                    text_attributions=token_attrs,
+                    attribution_error=attribution_error,
                 )
                 self._record_decision_event(event, function_name=fn.__name__)
                 return event
@@ -552,6 +657,9 @@ class DakmaClient:
         feature_importance: List[FeatureImportance],
         compute_usage: Optional[Dict[str, Any]],
         raw_output: Any,
+        input_kind: str = "tabular",
+        text_attributions: Optional[List[TokenAttribution]] = None,
+        attribution_error: Optional[str] = None,
     ) -> DecisionEvent:
         audit_id = self._audit_trail_id()
         governance = dict(self._governance) if self._governance else None
@@ -571,6 +679,18 @@ class DakmaClient:
             model_version = spec.version
             dataset = self._default_dataset
 
+        tokens = list(text_attributions or [])
+        metadata: Dict[str, Any] = {
+            "project": self.project,
+            "regulation": self.regulation,
+            "risk_level": self.risk_level,
+            "feature_lineage": dict(self._feature_lineage),
+        }
+        if input_kind != "tabular":
+            metadata["input_kind"] = input_kind
+        if attribution_error:
+            metadata["attribution_error"] = attribution_error
+
         explanation = Explanation(
             method=method,
             status="success" if factors else "degraded",
@@ -579,22 +699,19 @@ class DakmaClient:
                 "factor_count": len(factors),
                 "has_global_importance": bool(feature_importance),
                 "method": method,
+                **({"token_count": len(tokens)} if tokens else {}),
             },
-            plain_language=self._plain_language(decision, factors),
+            plain_language=self._plain_language(decision, factors, input_kind=input_kind),
             counterfactual=counterfactual_text,
             regulation_flags=self._regulation_flags(),
             feature_importance=feature_importance,
             compute_usage=compute_usage,
-            metadata={
-                "project": self.project,
-                "regulation": self.regulation,
-                "risk_level": self.risk_level,
-                "feature_lineage": dict(self._feature_lineage),
-            },
+            metadata=metadata,
             audit_trail_id=audit_id,
             model_version=model_version,
             governance=governance,
             evaluation=evaluation,
+            text_attributions=tokens,
         )
         return DecisionEvent(
             decision=decision,
@@ -872,6 +989,24 @@ class DakmaClient:
         return 0.0
 
     @staticmethod
+    def _score_class_index(raw_decision: Any) -> Optional[int]:
+        """Output index that :meth:`_extract_score` read, so attributions explain that score."""
+        try:
+            import torch  # type: ignore
+
+            if isinstance(raw_decision, torch.Tensor):
+                raw_decision = raw_decision.detach().cpu().numpy()
+        except Exception:
+            pass
+        try:
+            arr = np.asarray(raw_decision)
+        except Exception:
+            return None
+        if arr.ndim == 0 or arr.shape[-1] == 0:
+            return None
+        return int(arr.shape[-1] - 1)
+
+    @staticmethod
     def _to_decision_output(score: float, threshold: float) -> DecisionOutput:
         if score >= threshold:
             return DecisionOutput(label="APPROVED", score=score, threshold=threshold)
@@ -1053,6 +1188,67 @@ class DakmaClient:
         except Exception:
             return []
 
+    def _token_attributions(
+        self,
+        model: Any,
+        ids: Any,
+        *,
+        tokens: Any,
+        tokenizer: Any,
+        embedding_layer: Any,
+        n_steps: int,
+        baseline: Any,
+        target_class: Optional[int],
+        internal_batch_size: Optional[int],
+    ) -> Tuple[List[TokenAttribution], Optional[str]]:
+        """Per-token impacts, plus the reason attribution degraded (``None`` on success)."""
+        if model is None:
+            return [], "no torch.nn.Module found in the decorated call"
+        if ids is None:
+            return [], "no token id tensor found in the decorated call"
+        try:
+            from .text import token_attributions
+
+            return (
+                token_attributions(
+                    model,
+                    ids,
+                    tokens=tokens,
+                    tokenizer=tokenizer,
+                    embedding_layer=embedding_layer,
+                    n_steps=n_steps,
+                    baseline=baseline,
+                    target_class=target_class,
+                    internal_batch_size=internal_batch_size,
+                ),
+                None,
+            )
+        except Exception as exc:  # keep inference usable; the event records why it degraded
+            return [], f"{type(exc).__name__}: {exc}"
+
+    @staticmethod
+    def _token_top_factors(attributions: List[TokenAttribution], *, top_k: int) -> List[TopFactor]:
+        ranked = sorted(attributions, key=lambda t: abs(t.impact), reverse=True)[:top_k]
+        return [
+            TopFactor(name=t.token, value=t.index, impact=t.impact, direction=t.direction)
+            for t in ranked
+        ]
+
+    @staticmethod
+    def _first_token_id_tensor(args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Any:
+        try:
+            import torch  # type: ignore
+        except Exception:
+            return None
+        fallback = None
+        for value in list(args) + list(kwargs.values()):
+            if isinstance(value, torch.Tensor):
+                if not torch.is_floating_point(value):
+                    return value
+                if fallback is None:
+                    fallback = value
+        return fallback
+
     def _top_factors_shap(self, model: Any, row: Any) -> List[TopFactor]:
         shap = _safe_import_shap()
         pd = _safe_import_pandas()
@@ -1134,10 +1330,21 @@ class DakmaClient:
             suffix = f"xgb-{n_estimators}-d{max_depth}"
         return f"{self.project} / {suffix}"
 
-    def _plain_language(self, decision: Union[Decision, DecisionOutput], factors: List[TopFactor]) -> str:
+    def _plain_language(
+        self,
+        decision: Union[Decision, DecisionOutput],
+        factors: List[TopFactor],
+        *,
+        input_kind: str = "tabular",
+    ) -> str:
         if not factors:
             return f"{decision.label.title()}. Decision generated by model score and threshold."
         reason = factors[0]
+        if input_kind == "text":
+            return (
+                f"{decision.label.title()}. Main driver: the token \"{reason.name}\" "
+                f"which moved the score {'down' if reason.impact < 0 else 'up'}."
+            )
         direction = "high" if isinstance(reason.value, (int, float)) and float(reason.value) > 0 else "low"
         return (
             f"{decision.label.title()}. Main reason: {direction} {reason.name.replace('_', ' ')} "
