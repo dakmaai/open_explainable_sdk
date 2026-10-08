@@ -41,3 +41,13 @@ def test_mlp_integrated_gradients_example_runs() -> None:
     result = _run_example("mlp_integrated_gradients_example.py", timeout=240)
     assert result.returncode == 0, result.stderr or result.stdout
     assert "Integrated Gradients" in result.stdout or "audit_trail" in result.stdout.lower()
+
+
+@pytest.mark.smoke
+def test_text_highlight_example_runs() -> None:
+    pytest.importorskip("torch", reason="text highlight example needs torch (pip install dakma-sdk[dl])")
+    pytest.importorskip("captum")
+    result = _run_example("text_highlight_example.py", timeout=120)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "Downloadable reports" in result.stdout
+    assert "text_decision.html" in result.stdout

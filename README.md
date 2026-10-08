@@ -51,7 +51,7 @@ For **tabular audit output** (Markdown tables: data schema, training params, mon
 
 **Governance and evaluation templates:** every full audit and single-decision report can start with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **Governance documentation** — intended use, limitations, human oversight, data provenance, model changelog. These sections are *documentation aids only*; populate them with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
 
-The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. Both scripts register sample governance and test-set metrics for demonstration.
+The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. **`examples/text_highlight_example.py`** (needs `[dl]`) writes token-highlighted decision HTML under `examples/reports_text/`. All scripts register sample governance and metrics for demonstration.
 
 **Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
 
@@ -209,6 +209,8 @@ The same script calls `dm_c.monitor(...)` on the hold-out test set: it compares 
 ## Example: PyTorch MLP and Integrated Gradients
 
 `examples/mlp_integrated_gradients_example.py` trains a small MLP on the sklearn breast cancer dataset and explains a decision with Captum’s Integrated Gradients, using the same audit and downloadable-report flow as the XGBoost example. It uses `@dm.explain_integrated_gradients`, `register_integrated_gradients_feature_importance`, and writes `audit_report` / `mlp_decision` Markdown and HTML under `examples/reports_ig/`.
+
+For **text**, run `cd examples && python text_highlight_example.py` after `pip install "dakma-sdk[dl]"`, then open `examples/reports_text/text_decision.html` in a browser.
 
 ```bash
 pip install "dakma-sdk[ml,dl]"
