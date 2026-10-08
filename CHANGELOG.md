@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-07
+
+### Added
+
+- `DakmaClient.explain_text` / `ModelHandle.explain_text`: Integrated Gradients attribution per
+  token for text classification. Attributions are taken over word embeddings via a forward hook, so
+  any model containing an `nn.Embedding` works without being restructured.
+- `TokenAttribution` and `Explanation.text_attributions` hold the per-token impacts;
+  `DecisionEvent.highlighted_text()` renders the text shaded by impact as ANSI, Markdown, or HTML.
+- Markdown and HTML reports (including audit log entries) gain a **Highlighted text** section when a
+  decision has token attributions.
+- `dakma_sdk.text.token_attributions` and `find_embedding_layer` for computing token impacts outside
+  the decorators.
+
+### Changed
+
+- `reduce_attributions_to_features` accepts `reduce="tokens"` to sum a `(sequence, embedding)`
+  attribution matrix over the embedding axis. Previously only the sequence axis was collapsed, which
+  returned one impact per embedding dimension and discarded token names.
+- Text attribution failures degrade the explanation instead of silently returning no factors: the
+  reason is recorded in `explanation.metadata["attribution_error"]` and `status` becomes `degraded`.
+
+### Notes
+
+- First stable release (`Development Status :: 5 - Production/Stable`). The decision event and the
+  six core objects are considered stable; breaking changes to them now require a major version.
+- Upgrading from 0.5.0 needs no code changes.
+- Reports and governance blocks remain **documentation aids**, not legal or regulatory certification.
+
 ## [0.5.0] - 2026-08-14
 
 ### Added
@@ -44,5 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - This is an **alpha** release (`Development Status :: 3 - Alpha`).
 - Reports and governance blocks are **documentation aids**, not legal or regulatory certification.
 
+[1.0.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v1.0.0
 [0.5.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v0.5.0
 [0.1.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v0.1.0

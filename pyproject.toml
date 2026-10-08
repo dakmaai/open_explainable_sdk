@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dakma-sdk"
-version = "0.5.0"
+version = "1.0.0"
 description = "Explainability SDK for ML lifecycle tracking and auditable decisions."
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ requires-python = ">=3.9"
 authors = [{ name = "Anupiya Nugaliyadde" }]
 keywords = ["explainability", "ml", "governance", "audit", "shap", "xai"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",

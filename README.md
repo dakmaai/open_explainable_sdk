@@ -55,6 +55,8 @@ The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_re
 
 **Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
 
+**Text classification:** decorate inference with `DakmaClient.explain_text` to attribute a decision to individual tokens and highlight them in reports. See **Text classification (highlighted words)** below.
+
 ## The decision event
 
 The **decision event** is the SDK's fundamental object. Every explained inference produces one, and
@@ -141,6 +143,55 @@ print(result.explain.plain_language)
 print(result.explain.audit_trail_id)
 print(result.as_markdown_table())
 ```
+
+## Text classification (highlighted words)
+
+Requires the **`[dl]`** extra. `explain_text` attributes the decision to individual tokens with
+Integrated Gradients, so you can see which words drove it:
+
+```python
+import dakma
+import torch
+
+dk = dakma.init(project="review-sentiment")
+model = dk.model(name="review-sentiment", version="1.0.0", artifact=classifier)
+
+tokens = review.split()
+
+@model.explain_text(tokens=tokens)
+def classify(ids):
+    return torch.softmax(classifier(ids), dim=1)
+
+event = classify(encode(review))
+
+print(event.highlighted_text())        # the review, each word shaded in the terminal
+print(event.explanation.plain_language)
+for a in event.explanation.text_attributions:
+    print(a.token, a.impact)           # rude -2.2189, terrible -2.0800, ...
+```
+
+The wrapped function receives the model and a `(1, seq_len)` tensor of token ids and returns logits
+or probabilities. Attributions are taken over **word embeddings** through a forward hook, so any
+model containing an `nn.Embedding` works — including Hugging Face encoders — and nothing needs to be
+restructured. Pass `embedding_layer=` when a model embeds several inputs.
+
+Display tokens come from `tokens=` (a list, or a callable receiving the id tensor) or `tokenizer=`
+(anything exposing `convert_ids_to_tokens`); without either you get positional `token_0`, `token_1`
+labels. Impacts explain the score the threshold read — the last model output — so a positive impact
+pushed the text towards `APPROVED`; pass `target_class=` to attribute a different class.
+
+Each decision event carries the per-token impacts on `explanation.text_attributions` and renders
+them three ways: `highlighted_text()` for terminals and notebooks, `highlighted_text("markdown")`,
+and `highlighted_text("html")`. Markdown and HTML reports written with `write_report(...)` include a
+**Highlighted text** section automatically, alongside the usual per-token impact bars.
+
+When attribution cannot run — no embedding layer, no id tensor — inference still returns its
+decision event, with `explanation.status == "degraded"` and the reason recorded in
+`explanation.metadata["attribution_error"]`.
+
+For tabular tensors keep using `explain_integrated_gradients`. Its
+`reduce_attributions_to_features` helper now also accepts `reduce="tokens"` if you need per-token
+impacts from an attribution matrix you computed yourself.
 
 ## Example: `credit.csv` and XGBoost
 

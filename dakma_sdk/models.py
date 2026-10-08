@@ -19,6 +19,23 @@ class TopFactor:
 
 
 @dataclass
+class TokenAttribution:
+    """Signed attribution for one token of a classified text, in sequence order."""
+
+    token: str
+    index: int
+    impact: float
+
+    @property
+    def direction(self) -> str:
+        return "up" if self.impact >= 0 else "down"
+
+    def to_text(self) -> str:
+        sign = "+" if self.impact >= 0 else ""
+        return f"{self.token} (pushed score {self.direction} {sign}{self.impact:.4f})"
+
+
+@dataclass
 class FeatureImportance:
     """Global importance for one feature (e.g. mean |SHAP| or mean |IG| over a reference sample)."""
 
@@ -171,6 +188,8 @@ class Explanation:
     model_version: Optional[str] = None
     governance: Optional[Dict[str, Any]] = None
     evaluation: Optional[Dict[str, Any]] = None
+    #: Per-token impacts for classified text, in sequence order (see :meth:`highlighted_text`).
+    text_attributions: List[TokenAttribution] = field(default_factory=list)
 
     @property
     def top_factors(self) -> List[TopFactor]:
@@ -181,6 +200,29 @@ class Explanation:
     def attribution_backend(self) -> Optional[str]:
         """Alias for :attr:`method`, matching :class:`ExplainPayload`."""
         return self.method
+
+    def highlighted_text(self, format: Literal["ansi", "markdown", "html"] = "ansi") -> str:
+        """Render the classified text with each token shaded by its impact.
+
+        ``"ansi"`` is for terminals and notebooks, ``"markdown"`` and ``"html"`` match the
+        report formats. Returns ``""`` when the explanation carries no token attributions.
+        """
+        from .audit_format import (
+            format_text_highlight_ansi,
+            format_text_highlight_html,
+            format_text_highlight_markdown,
+        )
+
+        if not self.text_attributions:
+            return ""
+        renderers = {
+            "ansi": format_text_highlight_ansi,
+            "markdown": format_text_highlight_markdown,
+            "html": format_text_highlight_html,
+        }
+        if format not in renderers:
+            raise ValueError('format must be "ansi", "markdown", or "html".')
+        return renderers[format](self.text_attributions)
 
 
 @dataclass
@@ -232,6 +274,10 @@ class DecisionEvent:
     def explain(self) -> Explanation:
         """Alias for :attr:`explanation`, matching :class:`EnrichedResult`."""
         return self.explanation
+
+    def highlighted_text(self, format: Literal["ansi", "markdown", "html"] = "ansi") -> str:
+        """Render this decision's text with each token shaded by its impact."""
+        return self.explanation.highlighted_text(format)
 
     def to_audit_event(self, *, timestamp: str, event_type: str = "decision") -> AuditEvent:
         return AuditEvent(

@@ -20,8 +20,10 @@ from .models import (
     FeatureImportance,
     Model,
     Project,
+    TokenAttribution,
     TopFactor,
 )
+from .text import find_embedding_layer, token_attributions
 
 __all__ = [
     "init",
@@ -40,7 +42,10 @@ __all__ = [
     "EnrichedResult",
     "ExplainPayload",
     "FeatureImportance",
+    "TokenAttribution",
     "TopFactor",
+    "token_attributions",
+    "find_embedding_layer",
     "format_audit_log_markdown",
     "format_audit_entry_markdown",
     "format_inference_result_markdown",

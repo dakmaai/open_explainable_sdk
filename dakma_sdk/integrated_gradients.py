@@ -145,21 +145,38 @@ def _integrated_gradients_riemann(
     return (x - baseline) * total_grad
 
 
+def _reduce_over_tokens(a: np.ndarray, feature_names: Optional[Sequence[str]], reduce: str) -> bool:
+    if reduce == "tokens":
+        return True
+    if reduce == "features":
+        return False
+    seq_len, emb_dim = int(a.shape[0]), int(a.shape[1])
+    return feature_names is not None and len(feature_names) == seq_len and seq_len != emb_dim
+
+
 def reduce_attributions_to_features(
     attr: Any,
     *,
     feature_names: Optional[Sequence[str]] = None,
+    reduce: str = "auto",
 ) -> Tuple[List[str], np.ndarray, np.ndarray]:
     """Reduce IG tensor to signed impact per logical feature (first batch row).
 
     Returns ``(names, display_values, signed_impacts)``. Display values mirror the first
     input row where shapes align (tabular); otherwise zeros.
+
+    ``reduce`` controls how a ``(sequence, embedding)`` attribution matrix is collapsed:
+    ``"tokens"`` sums the embedding axis to give one impact per sequence position (text),
+    ``"features"`` sums the sequence axis to give one impact per embedding dimension, and
+    ``"auto"`` picks ``"tokens"`` when ``feature_names`` matches the sequence length.
     """
     torch, _ = _torch_nn()
     if torch is None:
         raise RuntimeError("PyTorch is required.")
     if not isinstance(attr, torch.Tensor):
         raise TypeError("attr must be a torch.Tensor")
+    if reduce not in ("auto", "features", "tokens"):
+        raise ValueError('reduce must be "auto", "features", or "tokens".')
     a = attr[0].detach().cpu().numpy()
 
     if a.ndim == 1:
@@ -171,6 +188,13 @@ def reduce_attributions_to_features(
         return names, np.zeros(n, dtype=float), impacts
 
     if a.ndim == 2:
+        if _reduce_over_tokens(a, feature_names, reduce):
+            impacts = np.sum(a, axis=1).astype(float)
+            n = int(impacts.shape[0])
+            names = list(feature_names) if feature_names is not None else []
+            if len(names) != n:
+                names = [f"token_{i}" for i in range(n)]
+            return names, np.zeros(n, dtype=float), impacts
         impacts = np.sum(a, axis=0).astype(float)
         n = int(impacts.shape[0])
         names = list(feature_names) if feature_names is not None else [f"f{i}" for i in range(n)]

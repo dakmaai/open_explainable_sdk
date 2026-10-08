@@ -514,6 +514,15 @@ def format_inference_result_markdown(
         parts.append(_format_compute_usage_markdown(cu))
 
     lh, ga, gf, la = _attribution_labels(explain)
+    tokens = explain.get("text_attributions") or []
+    if tokens:
+        highlight = format_text_highlight_markdown(tokens)
+        if highlight:
+            parts.append("")
+            parts.append("**Highlighted text (this decision)**")
+            parts.append("")
+            parts.append(highlight)
+
     factors = explain.get("top_factors") or []
     if factors:
         parts.append("")
@@ -775,6 +784,130 @@ def _html_shap_local_chart(
     return f'<figure class="dakma-shap-chart">{svg}</figure>'
 
 
+_MAX_HIGHLIGHT_TOKENS = 300
+_HIGHLIGHT_UP_RGB = (29, 78, 216)  # #1d4ed8, same blue as the signed impact bars
+_HIGHLIGHT_DOWN_RGB = (185, 28, 28)  # #b91c1c, same red as the signed impact bars
+_HIGHLIGHT_LEGEND = (
+    "Shading shows each token's Integrated Gradients impact: blue pushed the score up, "
+    "red pushed it down, stronger colour means larger impact."
+)
+
+
+def _pairs_token_impacts(attrs: Sequence[Any]) -> List[Tuple[str, float]]:
+    """Normalize token attributions (dataclasses or report dicts) to ``(token, impact)``."""
+    rows: List[Tuple[str, float]] = []
+    for item in attrs:
+        if isinstance(item, Mapping):
+            token, impact = item.get("token", ""), item.get("impact")
+        else:
+            token, impact = getattr(item, "token", ""), getattr(item, "impact", None)
+        try:
+            rows.append((str(token), float(impact or 0.0)))
+        except (TypeError, ValueError):
+            rows.append((str(token), 0.0))
+    return rows
+
+
+def _token_shade(impact: float, vmax: float) -> Tuple[Tuple[int, int, int], float]:
+    """Colour and opacity for one token, scaled against the strongest impact in the text."""
+    rgb = _HIGHLIGHT_UP_RGB if impact >= 0 else _HIGHLIGHT_DOWN_RGB
+    alpha = min(abs(impact) / vmax, 1.0) * 0.85 if vmax else 0.0
+    return rgb, alpha
+
+
+def _svg_text_highlight(attrs: Sequence[Any], *, width: int = 560) -> str:
+    rows = _pairs_token_impacts(attrs)[:_MAX_HIGHLIGHT_TOKENS]
+    if not rows:
+        return ""
+    char_w, font_size, pad_x, gap, line_h, pad_top = 7.0, 12, 5.0, 4.0, 24.0, 16.0
+    vmax = max(abs(v) for _, v in rows) or 1e-12
+
+    placed: List[Tuple[float, float, float, str, float]] = []  # x, y, box width, token, impact
+    x, line = 0.0, 0
+    for token, impact in rows:
+        box_w = len(token) * char_w + 2 * pad_x
+        if x > 0 and x + box_w > width:
+            x, line = 0.0, line + 1
+        placed.append((x, pad_top + line * line_h, box_w, token, impact))
+        x += box_w + gap
+    height = pad_top + (line + 1) * line_h + 6
+
+    parts: List[str] = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height:.0f}" '
+        f'viewBox="0 0 {width} {height:.0f}" role="img">',
+        f'<text x="0" y="11" font-size="11" fill="#666">Integrated Gradients (per token)</text>',
+    ]
+    for bx, by, box_w, token, impact in placed:
+        (r, g, b), alpha = _token_shade(impact, vmax)
+        text_fill = "#ffffff" if alpha > 0.5 else "#1a1a1a"
+        parts.append(
+            f'<rect x="{bx:.1f}" y="{by:.1f}" width="{box_w:.1f}" height="18" rx="3" '
+            f'fill="rgb({r},{g},{b})" fill-opacity="{alpha:.3f}">'
+            f"<title>{_svg_text_escape(token)}: {impact:+.6f}</title></rect>"
+        )
+        parts.append(
+            f'<text x="{bx + pad_x:.1f}" y="{by + 13:.1f}" font-size="{font_size}" '
+            f'font-family="ui-monospace, SFMono-Regular, Menlo, monospace" '
+            f'fill="{text_fill}">{_svg_text_escape(token)}</text>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def format_text_highlight_markdown(attrs: Sequence[Any]) -> str:
+    """Classified text with each token shaded by impact, as inline SVG for Markdown reports."""
+    svg = _svg_text_highlight(attrs)
+    if not svg:
+        return ""
+    note = f"*{_HIGHLIGHT_LEGEND}*"
+    truncated = _highlight_truncation_note(attrs)
+    return "\n\n".join(p for p in (f'<figure class="dakma-text-highlight">{svg}</figure>', note, truncated) if p)
+
+
+def format_text_highlight_html(attrs: Sequence[Any]) -> str:
+    """Classified text as shaded ``<span>`` elements, for HTML reports."""
+    rows = _pairs_token_impacts(attrs)[:_MAX_HIGHLIGHT_TOKENS]
+    if not rows:
+        return ""
+    vmax = max(abs(v) for _, v in rows) or 1e-12
+    spans: List[str] = []
+    for token, impact in rows:
+        (r, g, b), alpha = _token_shade(impact, vmax)
+        fg = "#ffffff" if alpha > 0.5 else "#1a1a1a"
+        spans.append(
+            f'<span class="dakma-token" style="background-color: rgba({r},{g},{b},{alpha:.3f}); color: {fg};" '
+            f'title="{html.escape(token, quote=True)}: {impact:+.6f}">{_html_esc(token)}</span>'
+        )
+    note = _highlight_truncation_note(attrs)
+    note_html = _html_p_em(note.strip("*")) if note else ""
+    return (
+        f'<figure class="dakma-text-highlight"><p class="dakma-text-line">{" ".join(spans)}</p></figure>'
+        f"{_html_p_em(_HIGHLIGHT_LEGEND)}{note_html}"
+    )
+
+
+def format_text_highlight_ansi(attrs: Sequence[Any]) -> str:
+    """Classified text shaded with 24-bit ANSI background colours, for terminals."""
+    rows = _pairs_token_impacts(attrs)[:_MAX_HIGHLIGHT_TOKENS]
+    if not rows:
+        return ""
+    vmax = max(abs(v) for _, v in rows) or 1e-12
+    out: List[str] = []
+    for token, impact in rows:
+        (r, g, b), alpha = _token_shade(impact, vmax)
+        # Terminals have no alpha, so blend towards a white background ourselves.
+        br, bg, bb = (round(255 + (c - 255) * alpha) for c in (r, g, b))
+        fg = "255;255;255" if alpha > 0.5 else "26;26;26"
+        out.append(f"\x1b[48;2;{br};{bg};{bb}m\x1b[38;2;{fg}m {token} \x1b[0m")
+    return " ".join(out)
+
+
+def _highlight_truncation_note(attrs: Sequence[Any]) -> str:
+    if len(attrs) <= _MAX_HIGHLIGHT_TOKENS:
+        return ""
+    return f"*Showing the first {_MAX_HIGHLIGHT_TOKENS} of {len(attrs)} tokens.*"
+
+
 def wrap_html_document(*, title: str, body_inner: str, subtitle: Optional[str] = None) -> str:
     """Wrap report body in a minimal printable HTML document."""
     sub = f'<p class="subtitle">{html.escape(subtitle, quote=False)}</p>' if subtitle else ""
@@ -796,6 +929,9 @@ def wrap_html_document(*, title: str, body_inner: str, subtitle: Optional[str] =
     section.entry {{ margin-bottom: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 1rem; }}
     figure.dakma-shap-chart {{ margin: 0.5rem 0 1rem; max-width: 56rem; }}
     figure.dakma-shap-chart svg {{ display: block; width: 100%; height: auto; max-width: 560px; }}
+    figure.dakma-text-highlight {{ margin: 0.5rem 0 0.75rem; max-width: 56rem; }}
+    p.dakma-text-line {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 2.1; margin: 0; }}
+    span.dakma-token {{ padding: 0.15rem 0.3rem; border-radius: 3px; }}
     p.dakma-disclaimer {{ margin: 0 0 1.25rem; padding: 0.65rem 0.85rem; background: #fff8e6; border: 1px solid #e6d9b8; border-radius: 4px; font-size: 0.9rem; }}
   </style>
 </head>
@@ -1021,6 +1157,13 @@ def format_inference_result_html(
         parts.append(_format_compute_usage_html(cu))
 
     lh, ga, gf, la = _attribution_labels(explain)
+    tokens = explain.get("text_attributions") or []
+    if tokens:
+        highlight = format_text_highlight_html(tokens)
+        if highlight:
+            parts.append(_html_h3("Highlighted text (this decision)"))
+            parts.append(highlight)
+
     factors = explain.get("top_factors") or []
     if factors:
         parts.append(_html_h3(lh))
