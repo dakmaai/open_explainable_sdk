@@ -35,6 +35,15 @@ def test_credit_scoring_svm_example_runs() -> None:
     assert "Downloadable reports" in result.stdout or "audit_report" in result.stdout
 
 
+@requires_sklearn_ml
+@pytest.mark.smoke
+def test_forecast_example_runs() -> None:
+    result = _run_example("forecast_example.py")
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "forecast" in result.stdout
+    assert "Downloadable reports" in result.stdout
+
+
 @requires_dl
 @pytest.mark.smoke
 def test_mlp_integrated_gradients_example_runs() -> None:

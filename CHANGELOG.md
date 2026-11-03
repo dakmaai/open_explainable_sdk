@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `explain_forecast` explains a regression forecast. The wrapped function receives the feature
+  metrics for that origin (a DataFrame or mapping) and returns a numeric forecast. The decision is
+  the forecast at `horizon` (default step `0`), and SHAP explains that step when the model returns
+  more than one. Reports list the feature metrics that were passed in. Approve/decline scoring on
+  `explain` is unchanged.
+
 ## [1.1.0] - 2026-10-22
 
 ### Fixed

@@ -20,6 +20,28 @@ DOCUMENTATION_DISCLAIMER_HTML = (
 )
 
 
+def _decision_rows(dec_out: Dict[str, Any]) -> List[Any]:
+    """Field/value rows for the decision table. Forecasts have no approve/decline threshold."""
+    if dec_out.get("forecast") is not None:
+        try:
+            forecast_s = f"{float(dec_out.get('forecast')):.2f}"
+        except (TypeError, ValueError):
+            forecast_s = _cell(dec_out.get("forecast"))
+        return [
+            ("forecast", forecast_s),
+            ("horizon", dec_out.get("horizon")),
+        ]
+    try:
+        sc = float(dec_out.get("score")) if dec_out.get("score") is not None else None
+        th = float(dec_out.get("threshold")) if dec_out.get("threshold") is not None else None
+        score_s = f"{sc:.2f}" if sc is not None else "—"
+        th_s = f"{th:.2f}" if th is not None else "—"
+    except (TypeError, ValueError):
+        score_s = _cell(dec_out.get("score"))
+        th_s = _cell(dec_out.get("threshold"))
+    return [("label", dec_out.get("label")), ("score", score_s), ("threshold", th_s)]
+
+
 def _cell(value: Any, *, max_len: int = 500) -> str:
     if value is None:
         return "—"
@@ -466,24 +488,18 @@ def format_inference_result_markdown(
     raw_decision = result_dict.get("decision")
 
     parts.append("**Decision**")
-    try:
-        sc = float(dec_out.get("score")) if dec_out.get("score") is not None else None
-        th = float(dec_out.get("threshold")) if dec_out.get("threshold") is not None else None
-        score_s = f"{sc:.2f}" if sc is not None else "—"
-        th_s = f"{th:.2f}" if th is not None else "—"
-    except (TypeError, ValueError):
-        score_s = _cell(dec_out.get("score"))
-        th_s = _cell(dec_out.get("threshold"))
-    parts.append(
-        _markdown_table(
-            ["Field", "Value"],
-            [
-                ("label", dec_out.get("label")),
-                ("score", score_s),
-                ("threshold", th_s),
-            ],
+    parts.append(_markdown_table(["Field", "Value"], _decision_rows(dec_out)))
+    feature_metrics = (explain.get("metadata") or {}).get("feature_metrics") or {}
+    if isinstance(feature_metrics, dict) and feature_metrics:
+        parts.append("")
+        parts.append("**Feature metrics**")
+        parts.append("Passed to the forecasting model for this forecast.")
+        parts.append(
+            _markdown_table(
+                ["Feature", "Value"],
+                [(name, value) for name, value in feature_metrics.items()],
+            )
         )
-    )
     parts.append("")
     parts.append("**Raw model output** (unchanged)")
     parts.append(_markdown_table(["decision"], [[_cell(raw_decision)]]))
@@ -553,7 +569,11 @@ def format_inference_result_markdown(
     if meta:
         parts.append("")
         parts.append("**Metadata**")
-        mr = [[k, _cell(v)] for k, v in sorted(meta.items()) if k != "feature_lineage"]
+        mr = [
+            [k, _cell(v)]
+            for k, v in sorted(meta.items())
+            if k not in {"feature_lineage", "feature_metrics", "forecast", "horizon"}
+        ]
         parts.append(_markdown_table(["Key", "Value"], mr))
         fl = meta.get("feature_lineage") or {}
         if fl:
@@ -1118,26 +1138,18 @@ def format_inference_result_html(
     explain = result_dict.get("explain") or {}
     raw_decision = result_dict.get("decision")
 
-    try:
-        sc = float(dec_out.get("score")) if dec_out.get("score") is not None else None
-        th = float(dec_out.get("threshold")) if dec_out.get("threshold") is not None else None
-        score_s = f"{sc:.2f}" if sc is not None else "—"
-        th_s = f"{th:.2f}" if th is not None else "—"
-    except (TypeError, ValueError):
-        score_s = _cell(dec_out.get("score"))
-        th_s = _cell(dec_out.get("threshold"))
-
     parts.append(_html_h3("Decision"))
-    parts.append(
-        _html_table(
-            ["Field", "Value"],
-            [
-                ("label", dec_out.get("label")),
-                ("score", score_s),
-                ("threshold", th_s),
-            ],
+    parts.append(_html_table(["Field", "Value"], _decision_rows(dec_out)))
+    feature_metrics = (explain.get("metadata") or {}).get("feature_metrics") or {}
+    if isinstance(feature_metrics, dict) and feature_metrics:
+        parts.append(_html_h3("Feature metrics"))
+        parts.append(_html_p_em("Passed to the forecasting model for this forecast."))
+        parts.append(
+            _html_table(
+                ["Feature", "Value"],
+                [(name, value) for name, value in feature_metrics.items()],
+            )
         )
-    )
     parts.append(_html_h3("Raw model output (unchanged)"))
     parts.append(_html_table(["decision"], [[_cell(raw_decision)]]))
 
@@ -1192,7 +1204,11 @@ def format_inference_result_html(
     meta = explain.get("metadata") or {}
     if meta:
         parts.append(_html_h3("Metadata"))
-        mr = [[k, _cell(v)] for k, v in sorted(meta.items()) if k != "feature_lineage"]
+        mr = [
+            [k, _cell(v)]
+            for k, v in sorted(meta.items())
+            if k not in {"feature_lineage", "feature_metrics", "forecast", "horizon"}
+        ]
         parts.append(_html_table(["Key", "Value"], mr))
         fl = meta.get("feature_lineage") or {}
         if fl:

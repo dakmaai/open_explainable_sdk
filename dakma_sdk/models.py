@@ -158,7 +158,11 @@ class Decision:
 
     value: str
     score: float
-    threshold: float
+    threshold: Optional[float] = None
+    #: Set by :meth:`dakma_sdk.core.DakmaClient.explain_forecast`. ``score`` is this value.
+    forecast: Optional[float] = None
+    #: Step index inside a multi-step forecast. ``0`` is the first step ahead.
+    horizon: Optional[int] = None
 
     @property
     def label(self) -> str:
@@ -166,7 +170,10 @@ class Decision:
         return self.value
 
     def to_text(self) -> str:
-        return f"{self.value} (score: {self.score:.2f}, threshold: {self.threshold:.2f})"
+        if self.forecast is not None:
+            return f"forecast {self.forecast:.2f} at horizon {self.horizon}"
+        threshold = 0.0 if self.threshold is None else self.threshold
+        return f"{self.value} (score: {self.score:.2f}, threshold: {threshold:.2f})"
 
 
 @dataclass
@@ -324,7 +331,9 @@ class DecisionEvent:
                 "label": self.decision.value,
                 "value": self.decision.value,
                 "score": self.decision.score,
-                "threshold": self.decision.threshold,
+                "threshold": None if self.decision.forecast is not None else self.decision.threshold,
+                "forecast": self.decision.forecast,
+                "horizon": self.decision.horizon,
             },
             "explain": explanation,
             "explanation": explanation,
