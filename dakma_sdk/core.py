@@ -170,6 +170,23 @@ class ModelHandle:
             top_k=top_k,
         )
 
+    def explain_forecast(
+        self,
+        *,
+        horizon: Optional[int] = None,
+        counterfactual: bool = False,
+        top_k: int = 3,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Explain a forecast. The wrapped call receives the feature metrics for that origin."""
+        return self._client._explain_decorator(
+            self,
+            backend="shap",
+            counterfactual=counterfactual,
+            top_k=top_k,
+            horizon=horizon,
+            task="forecast",
+        )
+
     def explain_integrated_gradients(
         self,
         *,
@@ -456,6 +473,37 @@ class DakmaClient:
             top_k=top_k,
         )
 
+    def explain_forecast(
+        self,
+        *,
+        horizon: Optional[int] = None,
+        counterfactual: bool = False,
+        top_k: int = 3,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Explain one forecast from a regression model.
+
+        The wrapped function receives the model and the feature metrics for this forecast
+        origin — a :class:`pandas.DataFrame` or a mapping of feature name to value — and
+        returns a numeric forecast: a scalar, shape ``(n_horizons,)``, or shape
+        ``(1, n_horizons)``. Pass that row as ``feature_metrics`` (keyword or the
+        DataFrame/mapping argument).
+
+        ``horizon`` selects which step is the forecast. The default is step ``0``, the
+        first step ahead. When the model returns more than one step, SHAP is sliced to
+        that same step. An index outside the returned forecast raises ``ValueError``.
+
+        The decision is the forecast value. Approve/decline scoring is unchanged on
+        :meth:`explain`.
+        """
+        return self._explain_decorator(
+            None,
+            backend="shap",
+            counterfactual=counterfactual,
+            top_k=top_k,
+            horizon=horizon,
+            task="forecast",
+        )
+
     def register_shap_feature_importance(
         self,
         model: Any,
@@ -570,6 +618,8 @@ class DakmaClient:
         tokenizer: Any = None,
         embedding_layer: Any = None,
         internal_batch_size: Optional[int] = 1,
+        horizon: Optional[int] = None,
+        task: str = "decision",
     ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
         def decorator(fn: Callable[..., Any]) -> Callable[..., DecisionEvent]:
             @functools.wraps(fn)
@@ -577,6 +627,8 @@ class DakmaClient:
                 bound = handle.artifact if handle is not None else None
                 token_attrs: List[TokenAttribution] = []
                 attribution_error: Optional[str] = None
+                forecast_decision: Optional[Decision] = None
+                feature_metrics: Optional[Dict[str, Any]] = None
                 with ComputeUsageRecorder() as rec:
                     raw_decision = fn(*args, **kwargs)
 
@@ -613,21 +665,47 @@ class DakmaClient:
                         cached_id, cached_rows = self._ig_fi_model_id, self._ig_fi_rows
                     else:
                         model = bound if bound is not None else self._first_model(args, kwargs)
-                        row = self._first_dataframe_or_mapping(args, kwargs)
-                        top_factors, attribution_error = self._top_factors(
-                            model,
-                            row,
-                            top_k=top_k,
-                            class_index=self._score_class_index(raw_decision),
-                        )
+                        if task == "forecast":
+                            row = kwargs.get("feature_metrics")
+                            if row is None:
+                                row = self._first_dataframe_or_mapping(args, kwargs)
+                            feature_metrics = self._feature_metrics_mapping(row)
+                            forecast_decision, horizon_index, n_horizons = self._forecast_decision(
+                                raw_decision, horizon
+                            )
+                            class_index = (
+                                horizon_index
+                                if n_horizons > 1
+                                else self._score_class_index(raw_decision)
+                            )
+                        else:
+                            row = self._first_dataframe_or_mapping(args, kwargs)
+                            class_index = self._score_class_index(raw_decision)
+                        if task == "forecast" and row is None:
+                            top_factors, attribution_error = [], (
+                                "pass feature_metrics as a DataFrame or mapping of feature values"
+                            )
+                        else:
+                            top_factors, attribution_error = self._top_factors(
+                                model,
+                                row,
+                                top_k=top_k,
+                                class_index=class_index,
+                            )
                         cached_id, cached_rows = self._shap_fi_model_id, self._shap_fi_rows
 
                     fi_rows: List[FeatureImportance] = []
                     if cached_id is not None and model is not None and id(model) == cached_id:
                         fi_rows = list(cached_rows)
 
-                    decision = self._to_decision(self._extract_score(raw_decision), threshold)
-                    counterfactual_text = self._counterfactual(top_factors) if counterfactual else None
+                    decision = forecast_decision or self._to_decision(
+                        self._extract_score(raw_decision), threshold
+                    )
+                    counterfactual_text = (
+                        self._counterfactual(top_factors, forecast=forecast_decision is not None)
+                        if counterfactual
+                        else None
+                    )
 
                 event = self._build_decision_event(
                     handle=handle,
@@ -642,6 +720,7 @@ class DakmaClient:
                     input_kind=input_kind,
                     text_attributions=token_attrs,
                     attribution_error=attribution_error,
+                    feature_metrics=feature_metrics,
                 )
                 self._record_decision_event(event, function_name=fn.__name__)
                 return event
@@ -665,6 +744,7 @@ class DakmaClient:
         input_kind: str = "tabular",
         text_attributions: Optional[List[TokenAttribution]] = None,
         attribution_error: Optional[str] = None,
+        feature_metrics: Optional[Dict[str, Any]] = None,
     ) -> DecisionEvent:
         audit_id = self._audit_trail_id()
         governance = dict(self._governance) if self._governance else None
@@ -695,6 +775,11 @@ class DakmaClient:
             metadata["input_kind"] = input_kind
         if attribution_error:
             metadata["attribution_error"] = attribution_error
+        if feature_metrics:
+            metadata["feature_metrics"] = feature_metrics
+        if decision.forecast is not None:
+            metadata["forecast"] = decision.forecast
+            metadata["horizon"] = decision.horizon
 
         explanation = Explanation(
             method=method,
@@ -1013,6 +1098,76 @@ class DakmaClient:
         if arr.ndim == 0 or arr.shape[-1] == 0:
             return None
         return int(arr.shape[-1] - 1)
+
+    @staticmethod
+    def _forecast_vector(raw_decision: Any) -> np.ndarray:
+        """One forecast as a 1d array of horizon values, using the first row of a batch."""
+        try:
+            import torch  # type: ignore
+
+            if isinstance(raw_decision, torch.Tensor):
+                raw_decision = raw_decision.detach().cpu().numpy()
+        except Exception:
+            pass
+        try:
+            arr = np.asarray(raw_decision, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("explain_forecast expected a numeric forecast") from exc
+        if arr.size == 0 or not np.isfinite(arr).all():
+            raise ValueError("explain_forecast expected a finite numeric forecast")
+        if arr.ndim == 0:
+            return arr.reshape(1)
+        if arr.ndim == 1:
+            return np.asarray(arr, dtype=float)
+        return np.asarray(arr.reshape(-1, arr.shape[-1])[0], dtype=float)
+
+    @staticmethod
+    def _forecast_decision(raw_decision: Any, horizon: Optional[int]) -> Tuple[Decision, int, int]:
+        """Forecast value, selected horizon index, and how many horizons were returned."""
+        values = DakmaClient._forecast_vector(raw_decision)
+        n_horizons = int(values.shape[0])
+        if horizon is None:
+            idx = 0
+        else:
+            idx = int(horizon)
+            if idx < 0 or idx >= n_horizons:
+                raise ValueError(
+                    f"horizon {idx} is outside 0..{n_horizons - 1} for this forecast"
+                )
+        value = float(values[idx])
+        decision = Decision(
+            value="FORECAST",
+            score=value,
+            threshold=None,
+            forecast=value,
+            horizon=idx,
+        )
+        return decision, idx, n_horizons
+
+    @staticmethod
+    def _feature_metrics_mapping(row: Any) -> Dict[str, Any]:
+        """Feature name to value for the row passed into the forecasting model."""
+        if row is None:
+            return {}
+        pd = _safe_import_pandas()
+        record: Any = None
+        if pd is not None and isinstance(row, pd.DataFrame):
+            if len(row) == 0:
+                return {}
+            record = row.iloc[0].to_dict()
+        elif isinstance(row, dict):
+            record = row
+        if record is None:
+            return {}
+        metrics: Dict[str, Any] = {}
+        for key, val in record.items():
+            try:
+                number = float(val)
+            except (TypeError, ValueError):
+                metrics[str(key)] = val
+            else:
+                metrics[str(key)] = number if np.isfinite(number) else val
+        return metrics
 
     @staticmethod
     def _to_decision_output(score: float, threshold: float) -> DecisionOutput:
@@ -1378,10 +1533,18 @@ class DakmaClient:
         return top
 
     @staticmethod
-    def _counterfactual(factors: List[TopFactor]) -> Optional[str]:
+    def _counterfactual(factors: List[TopFactor], forecast: bool = False) -> Optional[str]:
         if not factors:
             return None
         dominant = factors[0]
+        if forecast:
+            try:
+                target = float(dominant.value) * 0.7
+                change = f"{dominant.name} < {target:.2f}"
+            except (TypeError, ValueError):
+                change = f"{dominant.name} is lower"
+            direction = "higher" if dominant.impact < 0 else "lower"
+            return f"Forecast would be {direction} if {change}"
         if dominant.impact < 0:
             try:
                 target = float(dominant.value) * 0.7
@@ -1415,6 +1578,18 @@ class DakmaClient:
         *,
         input_kind: str = "tabular",
     ) -> str:
+        forecast = getattr(decision, "forecast", None)
+        if forecast is not None:
+            lead = f"Forecast {float(forecast):.2f} at horizon {getattr(decision, 'horizon', None)}"
+            if not factors:
+                return f"{lead}. No feature attribution was produced."
+            reason = factors[0]
+            direction = "high" if isinstance(reason.value, (int, float)) and float(reason.value) > 0 else "low"
+            moved = "down" if reason.impact < 0 else "up"
+            return (
+                f"{lead}. Main reason: {direction} {reason.name.replace('_', ' ')} "
+                f"which moved the forecast {moved}."
+            )
         if not factors:
             return f"{decision.label.title()}. Decision generated by model score and threshold."
         reason = factors[0]

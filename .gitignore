@@ -48,3 +48,5 @@ examples/reports_svm/*
 !examples/reports_svm/.gitkeep
 examples/reports_text/*
 !examples/reports_text/.gitkeep
+examples/reports_forecast/*
+!examples/reports_forecast/.gitkeep
