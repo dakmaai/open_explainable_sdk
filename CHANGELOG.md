@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-11-04
 
 ### Added
 
@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the forecast at `horizon` (default step `0`), and SHAP explains that step when the model returns
   more than one. Reports list the feature metrics that were passed in. Approve/decline scoring on
   `explain` is unchanged.
+
+### Changed
+
+- `Decision.threshold` is optional. Forecast decisions leave it unset and add `forecast` and
+  `horizon`. Classifier decisions still carry the threshold.
 
 ## [1.1.0] - 2026-10-22
 
@@ -106,6 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - This is an **alpha** release (`Development Status :: 3 - Alpha`).
 - Reports and governance blocks are **documentation aids**, not legal or regulatory certification.
 
+[2.0.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v2.0.0
 [1.1.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v1.0.0
 [0.5.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v0.5.0
