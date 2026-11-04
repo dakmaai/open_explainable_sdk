@@ -245,3 +245,78 @@ def test_multiclass_gradient_boosting_without_background_degrades_with_hint() ->
     event = score(model, row)
     assert event.explanation.status == "degraded"
     assert "register_shap_feature_importance" in event.explanation.metadata["attribution_error"]
+
+
+def _iris_rf():
+    from sklearn.datasets import load_iris
+    from sklearn.ensemble import RandomForestClassifier
+
+    X, y = load_iris(return_X_y=True, as_frame=True)
+    model = RandomForestClassifier(n_estimators=40, random_state=0).fit(X, y)
+    row = X.iloc[[0]]
+    return model, row, int(np.argmax(model.predict_proba(row)[0]))
+
+
+@requires_sklearn_ml
+def test_multiclass_decision_has_no_threshold() -> None:
+    model, row, _ = _iris_rf()
+    dm = dakma.init(project="iris-no-threshold")
+
+    @dm.explain()
+    def score(m, r):
+        return m.predict_proba(r)
+
+    event = score(model, row)
+    assert event.decision.threshold is None
+    assert event.to_report_dict()["decision_output"]["threshold"] is None
+    assert "threshold" not in event.decision.to_text()
+    assert "threshold" not in dm.format_audit_log_markdown().split("**Decision**")[1].split("**Raw")[0]
+
+
+@requires_sklearn_ml
+@pytest.mark.parametrize("bad", [3, 7, -1])
+def test_out_of_range_target_class_raises(bad: int) -> None:
+    model, row, _ = _iris_rf()
+    dm = dakma.init(project="iris-bad-target")
+
+    @dm.explain(target_class=bad)
+    def score(m, r):
+        return m.predict_proba(r)
+
+    with pytest.raises(ValueError, match="out of range"):
+        score(model, row)
+
+
+@requires_sklearn_ml
+def test_target_class_differing_from_prediction_is_stated_everywhere() -> None:
+    model, row, predicted = _iris_rf()
+    other = (predicted + 1) % 3
+    dm = dakma.init(project="iris-mismatch")
+
+    @dm.explain(counterfactual=True, target_class=other)
+    def score(m, r):
+        return m.predict_proba(r)
+
+    event = score(model, row)
+    text = event.explanation.plain_language
+    assert f"Predicted class {predicted}" in text
+    assert f"Explaining class {other}" in text
+    assert f"Main reason for class {other}" in text
+    assert event.explanation.counterfactual.startswith(f"Class {other} ")
+    assert event.explanation.metadata["explained_class"] == str(other)
+    assert event.to_report_dict()["decision_output"]["explained_class"] == str(other)
+    assert "explanation is for class" in dm.format_audit_log_markdown()
+
+
+@requires_sklearn_ml
+def test_target_class_equal_to_prediction_adds_no_mismatch_note() -> None:
+    model, row, predicted = _iris_rf()
+    dm = dakma.init(project="iris-same-target")
+
+    @dm.explain(target_class=predicted)
+    def score(m, r):
+        return m.predict_proba(r)
+
+    event = score(model, row)
+    assert "Explaining class" not in event.explanation.plain_language
+    assert event.to_report_dict()["decision_output"]["explained_class"] is None

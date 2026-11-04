@@ -44,12 +44,14 @@ def test_wine_multiclass_example_runs() -> None:
     assert "decision_class_2.html" in result.stdout
 
 
-@requires_ml
+@requires_sklearn_ml
 @pytest.mark.smoke
-def test_shap_model_matrix_example_runs() -> None:
-    result = _run_example("shap_model_matrix_example.py", timeout=300)
+def test_iris_multiclass_example_runs() -> None:
+    result = _run_example("iris_multiclass_example.py")
     assert result.returncode == 0, result.stderr or result.stdout
-    assert "--- Summary ---" in result.stdout
+    assert "Explaining class 1" in result.stdout
+    assert "out of range" in result.stdout
+    assert "decision_target_class_1.html" in result.stdout
 
 
 @requires_dl

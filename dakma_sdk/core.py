@@ -594,6 +594,7 @@ class DakmaClient:
                 attribution_error: Optional[str] = None
                 multiclass_decision: Optional[Decision] = None
                 explained_class: Optional[int] = None
+                explained_class_name: Optional[str] = None
                 with ComputeUsageRecorder() as rec:
                     raw_decision = fn(*args, **kwargs)
 
@@ -632,7 +633,13 @@ class DakmaClient:
                         model = bound if bound is not None else self._first_model(args, kwargs)
                         row = self._first_dataframe_or_mapping(args, kwargs)
                         multiclass_decision = self._multiclass_decision(raw_decision, model)
+                        n_outputs = self._output_width(raw_decision)
                         if target_class is not None:
+                            if n_outputs is not None and not 0 <= int(target_class) < n_outputs:
+                                raise ValueError(
+                                    f"target_class={target_class} is out of range for a model with "
+                                    f"{n_outputs} outputs (valid: 0-{n_outputs - 1})"
+                                )
                             explained_class = int(target_class)
                         elif multiclass_decision is not None:
                             explained_class = multiclass_decision.class_index
@@ -644,6 +651,8 @@ class DakmaClient:
                             top_k=top_k,
                             class_index=explained_class,
                         )
+                        if multiclass_decision is not None and explained_class is not None:
+                            explained_class_name = self._class_name(model, explained_class, n_outputs)
                         cached_id, cached_rows = self._shap_fi_model_id, self._shap_fi_rows
 
                     fi_rows: List[FeatureImportance] = []
@@ -654,16 +663,7 @@ class DakmaClient:
                         self._extract_score(raw_decision), threshold
                     )
                     counterfactual_text = (
-                        self._counterfactual(
-                            top_factors,
-                            explained_class=(
-                                decision.predicted_class
-                                if explained_class == decision.class_index
-                                else str(explained_class)
-                            )
-                            if decision.predicted_class is not None
-                            else None,
-                        )
+                        self._counterfactual(top_factors, explained_class=explained_class_name)
                         if counterfactual
                         else None
                     )
@@ -682,6 +682,7 @@ class DakmaClient:
                     text_attributions=token_attrs,
                     attribution_error=attribution_error,
                     explained_class=explained_class if multiclass_decision is not None else None,
+                    explained_class_name=explained_class_name,
                 )
                 self._record_decision_event(event, function_name=fn.__name__)
                 return event
@@ -706,6 +707,7 @@ class DakmaClient:
         text_attributions: Optional[List[TokenAttribution]] = None,
         attribution_error: Optional[str] = None,
         explained_class: Optional[int] = None,
+        explained_class_name: Optional[str] = None,
     ) -> DecisionEvent:
         audit_id = self._audit_trail_id()
         governance = dict(self._governance) if self._governance else None
@@ -738,6 +740,8 @@ class DakmaClient:
             metadata["attribution_error"] = attribution_error
         if explained_class is not None:
             metadata["explained_class_index"] = explained_class
+        if explained_class_name is not None:
+            metadata["explained_class"] = explained_class_name
 
         explanation = Explanation(
             method=method,
@@ -752,7 +756,9 @@ class DakmaClient:
                 ),
                 **({"token_count": len(tokens)} if tokens else {}),
             },
-            plain_language=self._plain_language(decision, factors, input_kind=input_kind),
+            plain_language=self._plain_language(
+                decision, factors, input_kind=input_kind, explained_class=explained_class_name
+            ),
             counterfactual=counterfactual_text,
             regulation_flags=self._regulation_flags(),
             feature_importance=feature_importance,
@@ -1058,6 +1064,27 @@ class DakmaClient:
         return int(arr.shape[-1] - 1)
 
     @staticmethod
+    def _output_width(raw_decision: Any) -> Optional[int]:
+        """Number of outputs (classes) in the model output, or ``None`` if it can't be determined."""
+        try:
+            arr = np.asarray(raw_decision, dtype=float)
+        except Exception:
+            return None
+        return None if arr.ndim == 0 else int(arr.shape[-1])
+
+    @staticmethod
+    def _class_name(model: Any, idx: int, n_outputs: Optional[int]) -> str:
+        """``str(model.classes_[idx])`` when available, else ``class_<idx>``."""
+        classes = getattr(model, "classes_", None)
+        if classes is not None:
+            try:
+                if n_outputs is None or len(classes) == n_outputs:
+                    return str(classes[idx])
+            except Exception:
+                pass
+        return f"class_{idx}"
+
+    @staticmethod
     def _multiclass_decision(raw_decision: Any, model: Any) -> Optional[Decision]:
         """Highest-probability class as the decision when the model has 3+ outputs, else ``None``.
 
@@ -1071,18 +1098,11 @@ class DakmaClient:
             return None
         first = arr.reshape(-1, arr.shape[-1])[0]
         idx = int(np.argmax(first))
-        name = f"class_{idx}"
-        classes = getattr(model, "classes_", None)
-        if classes is not None:
-            try:
-                if len(classes) == len(first):
-                    name = str(classes[idx])
-            except Exception:
-                pass
+        name = DakmaClient._class_name(model, idx, len(first))
         return Decision(
             value=name,
             score=float(first[idx]),
-            threshold=0.0,
+            threshold=None,
             predicted_class=name,
             class_index=idx,
         )
@@ -1506,21 +1526,28 @@ class DakmaClient:
         factors: List[TopFactor],
         *,
         input_kind: str = "tabular",
+        explained_class: Optional[str] = None,
     ) -> str:
         predicted_class = getattr(decision, "predicted_class", None)
         lead = f"Predicted class {predicted_class}" if predicted_class is not None else decision.label.title()
+        reason_label = "Main reason"
+        moved = "the score"
+        if predicted_class is not None and explained_class is not None and explained_class != predicted_class:
+            lead = f"{lead}. Explaining class {explained_class} (target_class)"
+            reason_label = f"Main reason for class {explained_class}"
+            moved = f"the class {explained_class} score"
         if not factors:
             return f"{lead}. Decision generated by model score and threshold."
         reason = factors[0]
         if input_kind == "text":
             return (
                 f"{lead}. Main driver: the token \"{reason.name}\" "
-                f"which moved the score {'down' if reason.impact < 0 else 'up'}."
+                f"which moved {moved} {'down' if reason.impact < 0 else 'up'}."
             )
         direction = "high" if isinstance(reason.value, (int, float)) and float(reason.value) > 0 else "low"
         return (
-            f"{lead}. Main reason: {direction} {reason.name.replace('_', ' ')} "
-            f"which moved the score {'down' if reason.impact < 0 else 'up'}."
+            f"{lead}. {reason_label}: {direction} {reason.name.replace('_', ' ')} "
+            f"which moved {moved} {'down' if reason.impact < 0 else 'up'}."
         )
 
     def _regulation_flags(self) -> List[str]:

@@ -107,7 +107,7 @@ if __name__ == "__main__":
         human_oversight="Not used for decisions; explainability test harness.",
         data_provenance="sklearn.datasets.load_wine (UCI Wine recognition dataset).",
         model_changelog=[
-            {"version": "demo-1.1.0", "date": "2026-10-23", "notes": "RandomForest + SHAP multi-class test"},
+            {"version": "demo-1.1.0", "date": "2026-11-04", "notes": "RandomForest + SHAP multi-class test"},
         ],
     )
     dm_w.register_evaluation(
@@ -144,7 +144,7 @@ if __name__ == "__main__":
         print(f"=== True class {cls} ({class_names[cls]}) — row index {wine_row.index[0]} ===")
         print(f"  predict_proba            : {np.round(proba, 3).tolist()}  -> predicted class {predicted}")
         print(f"  Decision.value           : {result.decision.value}")
-        print(f"  Decision.score           : {result.decision.score:.3f}  (threshold {result.decision.threshold})")
+        print(f"  Decision.score           : {result.decision.score:.3f}  (probability of the predicted class)")
         print(f"  Explanation.status       : {result.explanation.status}")
         print(f"  Explanation.counterfactual: {result.explanation.counterfactual}")
         print("  dakma top factors        :")

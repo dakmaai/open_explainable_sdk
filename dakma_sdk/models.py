@@ -158,9 +158,9 @@ class Decision:
 
     value: str
     score: float
-    threshold: float
+    threshold: Optional[float]
     #: Multi-class models only (3+ outputs): the highest-probability class, and its output index.
-    #: ``value`` is then that class name and ``score`` its probability; ``threshold`` is not used.
+    #: ``value`` is then that class name and ``score`` its probability; ``threshold`` is ``None``.
     predicted_class: Optional[str] = None
     class_index: Optional[int] = None
 
@@ -333,6 +333,12 @@ class DecisionEvent:
                 "threshold": self.decision.threshold,
                 "predicted_class": self.decision.predicted_class,
                 "class_index": self.decision.class_index,
+                # Set only when ``target_class`` made the explanation cover a different class.
+                "explained_class": (
+                    explained
+                    if (explained := self.explanation.metadata.get("explained_class")) != self.decision.predicted_class
+                    else None
+                ),
             },
             "explain": explanation,
             "explanation": explanation,
