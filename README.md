@@ -144,6 +144,31 @@ print(result.explain.audit_trail_id)
 print(result.as_markdown_table())
 ```
 
+## Forecasting
+
+`explain_forecast` is for a regression model that returns a number, or one number per horizon.
+Pass the feature metrics for the forecast origin into the wrapped function. The decision is that
+forecast, and SHAP attributes it. `horizon` selects the step (default `0`, the first step ahead).
+
+```python
+import dakma
+
+dm = dakma.init(project="demand-forecast")
+
+@dm.explain_forecast(horizon=0, counterfactual=True)
+def forecast(model, feature_metrics):
+    return model.predict(feature_metrics)
+
+result = forecast(model, feature_metrics)
+print(result.decision.to_text())          # forecast 12.40 at horizon 0
+print(result.explanation.plain_language)
+print(result.explanation.metadata["feature_metrics"])
+```
+
+`feature_metrics` is a one-row DataFrame or a mapping of feature name to value (lags, calendar
+measures, exogenous drivers). A multi-step return such as `[y1, y2, y3]` is explained at
+`horizon`. `@model.explain()` stays approve/decline and is the path for classifiers.
+
 ## Text classification (highlighted words)
 
 Requires the **`[dl]`** extra. `explain_text` attributes the decision to individual tokens with
@@ -251,8 +276,8 @@ Releases are published by [`.github/workflows/publish.yml`](.github/workflows/pu
 4. Bump `version` in `pyproject.toml`, update `CHANGELOG.md`, commit, then:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 The workflow builds with `python -m build`, runs `twine check`, and uploads via [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (no long-lived API token in the repo).
@@ -264,5 +289,5 @@ The workflow builds with `python -m build`, runs `twine check`, and uploads via 
 - **Documentation aid only** — not legal advice or compliance certification.
 - **SHAP / IG** require optional deps; failures may return empty explanations unless deps are installed.
 - **Feature lineage** is inferred from simple `df["col"] = ...` source patterns only.
-- **Decision labels** default to `APPROVED` / `DECLINED` (credit-style); not generic for all ML tasks.
+- **Classifier decisions** are `APPROVED` / `DECLINED`. Forecasts use `explain_forecast` and record the predicted value instead.
 - **`monitor()`** group rates are illustrative; not a full fairness or bias audit framework.

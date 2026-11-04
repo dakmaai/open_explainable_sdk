@@ -37,6 +37,15 @@ def test_credit_scoring_svm_example_runs() -> None:
 
 @requires_sklearn_ml
 @pytest.mark.smoke
+def test_forecast_example_runs() -> None:
+    result = _run_example("forecast_example.py")
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "forecast" in result.stdout
+    assert "Downloadable reports" in result.stdout
+
+
+@requires_sklearn_ml
+@pytest.mark.smoke
 def test_wine_multiclass_example_runs() -> None:
     result = _run_example("wine_multiclass_example.py")
     assert result.returncode == 0, result.stderr or result.stdout

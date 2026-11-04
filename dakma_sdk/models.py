@@ -158,11 +158,15 @@ class Decision:
 
     value: str
     score: float
-    threshold: Optional[float]
+    threshold: Optional[float] = None
     #: Multi-class models only (3+ outputs): the highest-probability class, and its output index.
     #: ``value`` is then that class name and ``score`` its probability; ``threshold`` is ``None``.
     predicted_class: Optional[str] = None
     class_index: Optional[int] = None
+    #: Set by :meth:`dakma_sdk.core.DakmaClient.explain_forecast`. ``score`` is this value.
+    forecast: Optional[float] = None
+    #: Step index inside a multi-step forecast. ``0`` is the first step ahead.
+    horizon: Optional[int] = None
 
     @property
     def label(self) -> str:
@@ -172,7 +176,10 @@ class Decision:
     def to_text(self) -> str:
         if self.predicted_class is not None:
             return f"class {self.predicted_class} (probability: {self.score:.2f})"
-        return f"{self.value} (score: {self.score:.2f}, threshold: {self.threshold:.2f})"
+        if self.forecast is not None:
+            return f"forecast {self.forecast:.2f} at horizon {self.horizon}"
+        threshold = 0.0 if self.threshold is None else self.threshold
+        return f"{self.value} (score: {self.score:.2f}, threshold: {threshold:.2f})"
 
 
 @dataclass
@@ -330,7 +337,9 @@ class DecisionEvent:
                 "label": self.decision.value,
                 "value": self.decision.value,
                 "score": self.decision.score,
-                "threshold": self.decision.threshold,
+                "threshold": None if self.decision.forecast is not None else self.decision.threshold,
+                "forecast": self.decision.forecast,
+                "horizon": self.decision.horizon,
                 "predicted_class": self.decision.predicted_class,
                 "class_index": self.decision.class_index,
                 # Set only when ``target_class`` made the explanation cover a different class.
