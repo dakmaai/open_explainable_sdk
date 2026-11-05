@@ -276,8 +276,8 @@ Releases are published by [`.github/workflows/publish.yml`](.github/workflows/pu
 4. Bump `version` in `pyproject.toml`, update `CHANGELOG.md`, commit, then:
 
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.2.0
+git push origin v2.2.0
 ```
 
 The workflow builds with `python -m build`, runs `twine check`, and uploads via [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (no long-lived API token in the repo).
@@ -289,5 +289,5 @@ The workflow builds with `python -m build`, runs `twine check`, and uploads via 
 - **Documentation aid only** — not legal advice or compliance certification.
 - **SHAP / IG** require optional deps; failures may return empty explanations unless deps are installed.
 - **Feature lineage** is inferred from simple `df["col"] = ...` source patterns only.
-- **Classifier decisions** are `APPROVED` / `DECLINED`. Forecasts use `explain_forecast` and record the predicted value instead.
+- **Binary classifier decisions** are `APPROVED` / `DECLINED`. Models with 3 or more classes use the predicted class. Forecasts use `explain_forecast` and record the predicted value instead.
 - **`monitor()`** group rates are illustrative; not a full fairness or bias audit framework.
