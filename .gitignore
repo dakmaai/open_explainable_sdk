@@ -50,3 +50,10 @@ examples/reports_text/*
 !examples/reports_text/.gitkeep
 examples/reports_forecast/*
 !examples/reports_forecast/.gitkeep
+examples/reports_iris/*
+!examples/reports_iris/.gitkeep
+examples/reports_wine/*
+!examples/reports_wine/.gitkeep
+
+# Local-only files
+CLAUDE.md

@@ -21,7 +21,7 @@ DOCUMENTATION_DISCLAIMER_HTML = (
 
 
 def _decision_rows(dec_out: Dict[str, Any]) -> List[Any]:
-    """Field/value rows for the decision table. Forecasts have no approve/decline threshold."""
+    """Field/value rows for the decision table (forecasts and multi-class decisions have no threshold)."""
     if dec_out.get("forecast") is not None:
         try:
             forecast_s = f"{float(dec_out.get('forecast')):.2f}"
@@ -39,6 +39,15 @@ def _decision_rows(dec_out: Dict[str, Any]) -> List[Any]:
     except (TypeError, ValueError):
         score_s = _cell(dec_out.get("score"))
         th_s = _cell(dec_out.get("threshold"))
+    if dec_out.get("predicted_class") is not None:
+        rows = [
+            ("predicted class", dec_out.get("predicted_class")),
+            ("class index", dec_out.get("class_index")),
+            ("probability", score_s),
+        ]
+        if dec_out.get("explained_class") is not None:
+            rows.append(("explanation is for class", dec_out.get("explained_class")))
+        return rows
     return [("label", dec_out.get("label")), ("score", score_s), ("threshold", th_s)]
 
 

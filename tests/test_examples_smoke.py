@@ -44,6 +44,25 @@ def test_forecast_example_runs() -> None:
     assert "Downloadable reports" in result.stdout
 
 
+@requires_sklearn_ml
+@pytest.mark.smoke
+def test_wine_multiclass_example_runs() -> None:
+    result = _run_example("wine_multiclass_example.py")
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "Downloadable reports" in result.stdout
+    assert "decision_class_2.html" in result.stdout
+
+
+@requires_sklearn_ml
+@pytest.mark.smoke
+def test_iris_multiclass_example_runs() -> None:
+    result = _run_example("iris_multiclass_example.py")
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "Explaining class 1" in result.stdout
+    assert "out of range" in result.stdout
+    assert "decision_target_class_1.html" in result.stdout
+
+
 @requires_dl
 @pytest.mark.smoke
 def test_mlp_integrated_gradients_example_runs() -> None:
