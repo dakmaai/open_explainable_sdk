@@ -23,6 +23,7 @@ from .models import (
     FeatureImportance,
     Model,
     Project,
+    ImageAttribution,
     TokenAttribution,
     TopFactor,
 )
@@ -240,6 +241,33 @@ class ModelHandle:
             tokenizer=tokenizer,
             embedding_layer=embedding_layer,
             internal_batch_size=internal_batch_size,
+        )
+
+    def explain_image(
+        self,
+        *,
+        class_names: Optional[Sequence[str]] = None,
+        target_class: Optional[int] = None,
+        threshold: float = 0.5,
+        counterfactual: bool = False,
+        top_k: int = 4,
+        n_steps: int = 16,
+        baseline: Any = None,
+        channels_last: bool = False,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Explain an image classifier by painting the decision's regions on the input image."""
+        return self._client._explain_decorator(
+            self,
+            backend="integrated_gradients",
+            input_kind="image",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            baseline=baseline,
+            target_class=target_class,
+            class_names=class_names,
+            channels_last=channels_last,
         )
 
 
@@ -616,6 +644,47 @@ class DakmaClient:
             internal_batch_size=internal_batch_size,
         )
 
+    def explain_image(
+        self,
+        *,
+        class_names: Optional[Sequence[str]] = None,
+        target_class: Optional[int] = None,
+        threshold: float = 0.5,
+        counterfactual: bool = False,
+        top_k: int = 4,
+        n_steps: int = 16,
+        baseline: Any = None,
+        channels_last: bool = False,
+    ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
+        """Explain an image classifier and show the regions behind the decision.
+
+        The wrapped function receives the model and one channels-first image
+        (``(1, C, H, W)`` or ``(C, H, W)``; pass ``channels_last=True`` for
+        ``(1, H, W, C)``) and returns class scores. Two or more outputs are a
+        binary or multi-class decision: the predicted class is the highest score,
+        and Integrated Gradients explains that class. One output is a positive-class
+        score compared with ``threshold``. ``class_names`` labels the outputs
+        (for one output, pass the negative name then the positive name).
+
+        ``target_class`` explains a different output index without changing the
+        predicted class. An index outside the returned scores raises ``ValueError``.
+        The explanation carries a PNG of the input image with those regions painted
+        on it: red supported the explained class, blue counted against it.
+        """
+        return self._explain_decorator(
+            None,
+            backend="integrated_gradients",
+            input_kind="image",
+            counterfactual=counterfactual,
+            threshold=threshold,
+            top_k=top_k,
+            n_steps=n_steps,
+            baseline=baseline,
+            target_class=target_class,
+            class_names=class_names,
+            channels_last=channels_last,
+        )
+
     def _explain_decorator(
         self,
         handle: Optional[ModelHandle],
@@ -635,6 +704,8 @@ class DakmaClient:
         internal_batch_size: Optional[int] = 1,
         horizon: Optional[int] = None,
         task: str = "decision",
+        class_names: Optional[Sequence[str]] = None,
+        channels_last: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
         def decorator(fn: Callable[..., Any]) -> Callable[..., DecisionEvent]:
             @functools.wraps(fn)
@@ -647,10 +718,72 @@ class DakmaClient:
                 explained_class_name: Optional[str] = None
                 forecast_decision: Optional[Decision] = None
                 feature_metrics: Optional[Dict[str, Any]] = None
+                image_attribution: Optional[ImageAttribution] = None
                 with ComputeUsageRecorder() as rec:
                     raw_decision = fn(*args, **kwargs)
 
-                    if input_kind == "text":
+                    if input_kind == "image":
+                        from .image import explain_image_prediction, image_areas_of_interest
+
+                        model = bound if bound is not None else self._first_pytorch_module(args, kwargs)
+                        image = kwargs.get("image")
+                        if image is None:
+                            image = self._first_torch_tensor(args, kwargs)
+                        predicted_index, predicted_name, probability, n_outputs = explain_image_prediction(
+                            raw_decision,
+                            class_names=class_names,
+                            threshold=threshold,
+                        )
+                        if target_class is not None:
+                            if not 0 <= int(target_class) < n_outputs:
+                                raise ValueError(
+                                    f"target_class={target_class} is out of range for a model with "
+                                    f"{n_outputs} outputs (valid: 0-{n_outputs - 1})"
+                                )
+                            output_index = int(target_class)
+                            polarity = 1.0
+                            if n_outputs == 1:
+                                explained_class = 1
+                                explained_class_name = self._image_class_name(class_names, 1, n_outputs)
+                            else:
+                                explained_class = output_index
+                                explained_class_name = (
+                                    predicted_name
+                                    if output_index == predicted_index
+                                    else self._image_class_name(class_names, output_index, n_outputs)
+                                )
+                        else:
+                            output_index = 0 if n_outputs == 1 else predicted_index
+                            polarity = -1.0 if n_outputs == 1 and predicted_index == 0 else 1.0
+                            explained_class = predicted_index
+                            explained_class_name = predicted_name
+                        multiclass_decision = Decision(
+                            value=predicted_name,
+                            score=probability,
+                            threshold=None,
+                            predicted_class=predicted_name,
+                            class_index=predicted_index,
+                        )
+                        try:
+                            if model is None or image is None:
+                                raise ValueError("pass the image classifier and one image tensor")
+                            top_factors, image_attribution = image_areas_of_interest(
+                                model,
+                                image,
+                                explained_class=explained_class,
+                                explained_class_name=explained_class_name,
+                                n_steps=n_steps,
+                                baseline=baseline,
+                                channels_last=channels_last,
+                                top_k=top_k,
+                                target_output=output_index,
+                                polarity=polarity,
+                            )
+                        except Exception as exc:
+                            top_factors = []
+                            attribution_error = f"{type(exc).__name__}: {exc}"
+                        cached_id, cached_rows = None, []
+                    elif input_kind == "text":
                         model = bound if bound is not None else self._first_pytorch_module(args, kwargs)
                         token_attrs, attribution_error = self._token_attributions(
                             model,
@@ -765,6 +898,7 @@ class DakmaClient:
                     explained_class=explained_class if multiclass_decision is not None else None,
                     explained_class_name=explained_class_name,
                     feature_metrics=feature_metrics,
+                    image_attribution=image_attribution,
                 )
                 self._record_decision_event(event, function_name=fn.__name__)
                 return event
@@ -791,6 +925,7 @@ class DakmaClient:
         explained_class: Optional[int] = None,
         explained_class_name: Optional[str] = None,
         feature_metrics: Optional[Dict[str, Any]] = None,
+        image_attribution: Optional[ImageAttribution] = None,
     ) -> DecisionEvent:
         audit_id = self._audit_trail_id()
         governance = dict(self._governance) if self._governance else None
@@ -857,6 +992,7 @@ class DakmaClient:
             governance=governance,
             evaluation=evaluation,
             text_attributions=tokens,
+            image_attribution=image_attribution,
         )
         return DecisionEvent(
             decision=decision,
@@ -1171,6 +1307,17 @@ class DakmaClient:
             except Exception:
                 pass
         return f"class_{idx}"
+
+    @staticmethod
+    def _image_class_name(class_names: Optional[Sequence[str]], index: int, n_outputs: int) -> str:
+        if class_names is None:
+            return str(index)
+        names = list(class_names)
+        if n_outputs == 1 and len(names) >= 2 and index in (0, 1):
+            return str(names[index])
+        if len(names) == n_outputs and 0 <= index < len(names):
+            return str(names[index])
+        return str(index)
 
     @staticmethod
     def _multiclass_decision(raw_decision: Any, model: Any) -> Optional[Decision]:
@@ -1722,6 +1869,12 @@ class DakmaClient:
         if input_kind == "text":
             return (
                 f"{lead}. Main driver: the token \"{reason.name}\" "
+                f"which moved {moved} {'down' if reason.impact < 0 else 'up'}."
+            )
+        if input_kind == "image":
+            return (
+                f"{lead}. The colored regions on the input image are what the model used. "
+                f"{reason_label}: {reason.name.replace('_', ' ')} "
                 f"which moved {moved} {'down' if reason.impact < 0 else 'up'}."
             )
         direction = "high" if isinstance(reason.value, (int, float)) and float(reason.value) > 0 else "low"

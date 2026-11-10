@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-07
+
+### Added
+
+- `explain_image` explains an image classifier for a binary decision (2 outputs, or one
+  positive-class score) and for multi-class decisions (3 or more outputs). The decision is the
+  predicted class, and Integrated Gradients explains that class. `target_class` explains another
+  output without changing the decision. An out-of-range index raises `ValueError`.
+- The explanation paints those regions on the input image. Red supported the explained class and
+  blue counted against it. Reports show the overlay, and `highlighted_image()` returns the PNG.
+
 ## [2.2.0] - 2026-11-06
 
 ### Changed
@@ -136,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - This is an **alpha** release (`Development Status :: 3 - Alpha`).
 - Reports and governance blocks are **documentation aids**, not legal or regulatory certification.
 
+[3.0.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v3.0.0
 [2.2.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v2.2.0
 [2.0.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v2.0.0
 [1.1.0]: https://github.com/dakmaai/open_explainable_sdk/releases/tag/v1.1.0

@@ -36,6 +36,23 @@ class TokenAttribution:
 
 
 @dataclass
+class ImageAttribution:
+    """Heatmap of the regions that supported an image classification, painted on the input."""
+
+    width: int
+    height: int
+    explained_class: int
+    explained_class_name: str
+    #: Base64-encoded PNG of the input image with the attribution overlay.
+    overlay_png: str
+
+    def png_bytes(self) -> bytes:
+        import base64
+
+        return base64.b64decode(self.overlay_png)
+
+
+@dataclass
 class FeatureImportance:
     """Global importance for one feature (e.g. mean |SHAP| or mean |IG| over a reference sample)."""
 
@@ -203,6 +220,8 @@ class Explanation:
     evaluation: Optional[Dict[str, Any]] = None
     #: Per-token impacts for classified text, in sequence order (see :meth:`highlighted_text`).
     text_attributions: List[TokenAttribution] = field(default_factory=list)
+    #: Regions that drove an image classification, drawn on the input (see :meth:`highlighted_image`).
+    image_attribution: Optional[ImageAttribution] = None
 
     @property
     def top_factors(self) -> List[TopFactor]:
@@ -236,6 +255,16 @@ class Explanation:
         if format not in renderers:
             raise ValueError('format must be "ansi", "markdown", or "html".')
         return renderers[format](self.text_attributions)
+
+    def highlighted_image(self) -> bytes:
+        """PNG of the input image with the explained class's regions painted on it.
+
+        Red supported the explained class and blue counted against it. Returns ``b""``
+        when this explanation has no image attribution.
+        """
+        if self.image_attribution is None:
+            return b""
+        return self.image_attribution.png_bytes()
 
 
 @dataclass
@@ -291,6 +320,10 @@ class DecisionEvent:
     def highlighted_text(self, format: Literal["ansi", "markdown", "html"] = "ansi") -> str:
         """Render this decision's text with each token shaded by its impact."""
         return self.explanation.highlighted_text(format)
+
+    def highlighted_image(self) -> bytes:
+        """PNG of the input image with the regions that drove this decision painted on it."""
+        return self.explanation.highlighted_image()
 
     def to_audit_event(self, *, timestamp: str, event_type: str = "decision") -> AuditEvent:
         return AuditEvent(
