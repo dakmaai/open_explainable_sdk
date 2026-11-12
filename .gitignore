@@ -50,6 +50,8 @@ examples/reports_text/*
 !examples/reports_text/.gitkeep
 examples/reports_forecast/*
 !examples/reports_forecast/.gitkeep
+examples/reports_image/*
+!examples/reports_image/.gitkeep
 examples/reports_iris/*
 !examples/reports_iris/.gitkeep
 examples/reports_wine/*

@@ -480,6 +480,35 @@ def _format_compute_usage_html(cu: Mapping[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _image_overlay_markdown(attribution: Any) -> str:
+    if not isinstance(attribution, dict):
+        return ""
+    png = attribution.get("overlay_png")
+    if not png:
+        return ""
+    name = attribution.get("explained_class_name") or ""
+    return (
+        f"![Areas of interest for class {name}](data:image/png;base64,{png})\n\n"
+        "Red supported the explained class and blue counted against it. "
+        "The color deepens where that region mattered more."
+    )
+
+
+def _image_overlay_html(attribution: Any) -> str:
+    if not isinstance(attribution, dict):
+        return ""
+    png = attribution.get("overlay_png")
+    if not png:
+        return ""
+    name = _html_esc(attribution.get("explained_class_name") or "")
+    return (
+        f'<img alt="Areas of interest for class {name}" '
+        f'src="data:image/png;base64,{png}" />'
+        "<p><em>Red supported the explained class and blue counted against it. "
+        "The color deepens where that region mattered more.</em></p>"
+    )
+
+
 def format_inference_result_markdown(
     result_dict: Dict[str, Any],
     *,
@@ -554,6 +583,13 @@ def format_inference_result_markdown(
             parts.append("**Highlighted text (this decision)**")
             parts.append("")
             parts.append(highlight)
+
+    overlay = _image_overlay_markdown(explain.get("image_attribution"))
+    if overlay:
+        parts.append("")
+        parts.append("**Areas of interest (this decision)**")
+        parts.append("")
+        parts.append(overlay)
 
     factors = explain.get("top_factors") or []
     if factors:
@@ -668,6 +704,14 @@ _MAX_SHAP_CHART_ROWS = 20
 
 def _attribution_labels(explain: Mapping[str, Any]) -> Tuple[str, str, str, str]:
     """Headings and chart axis copy: local heading, global bar axis label, global footnote (markdown), local axis."""
+    if (explain.get("metadata") or {}).get("input_kind") == "image":
+        return (
+            "Regions (Integrated Gradients for this image)",
+            "Mean |IG|",
+            "*Mean |Integrated Gradients| averaged over the reference sample passed to "
+            "register_integrated_gradients_feature_importance.*",
+            "Integrated Gradients (this image)",
+        )
     if explain.get("attribution_backend") == "integrated_gradients":
         return (
             "Top factors (Integrated Gradients for this row)",
@@ -1198,6 +1242,11 @@ def format_inference_result_html(
         if highlight:
             parts.append(_html_h3("Highlighted text (this decision)"))
             parts.append(highlight)
+
+    overlay_html = _image_overlay_html(explain.get("image_attribution"))
+    if overlay_html:
+        parts.append(_html_h3("Areas of interest (this decision)"))
+        parts.append(overlay_html)
 
     factors = explain.get("top_factors") or []
     if factors:
