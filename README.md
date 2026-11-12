@@ -2,15 +2,29 @@
 
 PyPI package **`dakma-sdk`** — source repo: [dakmaai/open_explainable_sdk](https://github.com/dakmaai/open_explainable_sdk). Import as `dakma` or `dakma_sdk`.
 
-`dakma-sdk` is a Python explainability SDK for model governance and decision transparency across:
-
-- data ingestion (`dtype`, null counts)
-- feature engineering lineage
-- training metadata (params and metrics)
-- inference-time explainability: **SHAP** for common tabular / tree models, or **Integrated Gradients** (Captum) for differentiable models such as **PyTorch** `nn.Module` (+ plain language + audit id)
-- basic monitoring hooks (bias and drift indicators)
+`dakma-sdk` records a model's lifecycle and explains the decision that model just made. Every explained inference returns a decision event with a plain-language reason, the factors behind it, and an audit id.
 
 > **Disclaimer:** dakma-sdk helps you *document* model lifecycle and explainability information. It does **not** provide legal advice or regulatory certification.
+
+## Capabilities
+
+| Capability | API | Extra | What you get |
+| --- | --- | --- | --- |
+| Data ingestion | `@track_data` | — | Column dtypes, null counts, and feature-engineering lineage |
+| Training record | `@track_training` | — | Training parameters and metrics |
+| Tabular binary decision | `@explain` | `[ml]` | `APPROVED` / `DECLINED` from the score and threshold, with SHAP factors |
+| Tabular multi-class | `@explain` | `[ml]` | The predicted class. `target_class` explains a different output without changing the decision |
+| PyTorch tabular | `@explain_integrated_gradients` | `[dl]` | The same decision, attributed with Integrated Gradients |
+| Forecasting | `@explain_forecast` | `[ml]` | The forecast at `horizon`, attributed with SHAP from the feature metrics passed in |
+| Text classification | `@explain_text` | `[dl]` | Per-token impacts, highlighted in the text and in reports |
+| Image classification | `@explain_image` | `[dl]` | The predicted class, with those regions painted on the input image |
+| Governance and evaluation | `register_governance`, `register_evaluation` | — | Intended use, limitations, oversight, provenance, hold-out metrics, and a confusion matrix on each report |
+| Monitoring | `monitor` | — | Accuracy, positive-prediction rate, drift against an expected rate, and group positive rates |
+| Reports | `write_report`, `write_audit_report` | — | One decision, or the full audit trail, as Markdown or HTML |
+
+SHAP is used for tabular models and forecasts. Integrated Gradients is used for PyTorch tabular inputs, text, and images. A missing optional dependency still returns the decision, with `explanation.status == "degraded"`.
+
+Binary tabular decisions stay `APPROVED` / `DECLINED`. Tabular models with 3 or more classes, and image classifiers, use the predicted class. Forecasts record the predicted value. Image overlays are a translucent tint: red supported the explained class, blue counted against it, and the color deepens where that region mattered more. The input stays visible. `highlighted_image()` returns the PNG. Text uses `highlighted_text()`.
 
 ## Install
 
@@ -51,13 +65,15 @@ For **tabular audit output** (Markdown tables: data schema, training params, mon
 
 **Governance and evaluation templates:** every full audit and single-decision report can start with (1) **Evaluation and dataset** — train/test description, `n_train` / `n_test`, hold-out `test_metrics` (precision, recall, F1, ROC-AUC, etc.), optional `confusion_matrix`, plus automated gap notes when items are missing; and (2) **Governance documentation** — intended use, limitations, human oversight, data provenance, model changelog. These sections are *documentation aids only*; populate them with `DakmaClient.register_evaluation(...)` and `DakmaClient.register_governance(...)` before running explained inference so they appear on downloaded reports and are snapshotted on each `EnrichedResult.explain` payload.
 
-The tabular XGBoost example writes `examples/reports/audit_report.md`, `audit_report.html`, and `last_decision.html`. The **MLP (PyTorch) Integrated Gradients** example writes the same style of reports under `examples/reports_ig/`. **`examples/text_highlight_example.py`** (needs `[dl]`) writes token-highlighted decision HTML under `examples/reports_text/`. All scripts register sample governance and metrics for demonstration.
+Each example under `examples/` registers sample governance and metrics, then writes a report. The scripts are listed in **Examples** below.
 
-**Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See the **Example: PyTorch MLP and Integrated Gradients** section below.
+**Deep learning (PyTorch):** decorate inference with `DakmaClient.explain_integrated_gradients` and optionally call `register_integrated_gradients_feature_importance` for a global snapshot in the audit. See **Example: PyTorch MLP and Integrated Gradients**.
 
-**Text classification:** decorate inference with `DakmaClient.explain_text` to attribute a decision to individual tokens and highlight them in reports. See **Text classification (highlighted words)** below.
+**Text classification:** decorate inference with `DakmaClient.explain_text`. See **Text classification (highlighted words)**.
 
-**Image classification:** decorate inference with `DakmaClient.explain_image` to explain a binary or multi-class image model and paint the regions behind the decision on the input image. See **Image classification** below.
+**Image classification:** decorate inference with `DakmaClient.explain_image`. See **Image classification**.
+
+**Forecasting:** decorate inference with `DakmaClient.explain_forecast`. See **Forecasting**.
 
 ## The decision event
 
@@ -267,6 +283,23 @@ For **text**, run `cd examples && python text_highlight_example.py` after `pip i
 pip install "dakma-sdk[ml,dl]"
 cd examples && python mlp_integrated_gradients_example.py
 ```
+
+## Examples
+
+Run these from `examples/` after installing the extra named in the table.
+
+| Script | Capability | Extra |
+| --- | --- | --- |
+| `credit_scoring_example.py` | Tabular XGBoost: data tracking, training, SHAP, monitoring, audit report | `[ml]` |
+| `credit_scoring_svm_example.py` | The same credit workflow with a scikit-learn SVM | `[ml]` |
+| `iris_multiclass_example.py` | Three-class decision, plus `target_class` for a class the model did not pick | `[ml]` |
+| `wine_multiclass_example.py` | Three-class decision, one explained prediction per class | `[ml]` |
+| `forecast_example.py` | Demand forecast from lag and calendar feature metrics | `[ml]` |
+| `mlp_integrated_gradients_example.py` | PyTorch MLP explained with Integrated Gradients | `[ml,dl]` |
+| `text_highlight_example.py` | Token highlights for a text classifier | `[dl]` |
+| `image_classification_example.py` | Image classifier with the decision painted on the input | `[dl]` |
+
+Reports are written next to each script, under `examples/reports/`, `examples/reports_svm/`, `examples/reports_ig/`, `examples/reports_text/`, `examples/reports_forecast/`, `examples/reports_iris/`, `examples/reports_wine/`, and `examples/reports_image/`.
 
 ## Testing
 
