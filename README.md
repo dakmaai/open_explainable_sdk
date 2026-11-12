@@ -281,13 +281,40 @@ pytest -m smoke              # example scripts only
 
 CI runs unit tests on Python 3.9–3.12 and example smoke tests on 3.11 (see `.github/workflows/ci.yml`).
 
+## Release 3.0.0
+
+**3.0.0** adds image classification explanations. Decorate a PyTorch classifier with `explain_image`. The decision is the predicted class, and Integrated Gradients paints the pixels behind that decision on the test image. Red supported the class and blue counted against it. The tint is translucent and deepens where a region mattered more, so the input stays visible. `highlighted_image()` returns the PNG, and Markdown and HTML reports include the overlay.
+
+Install the release once it is on PyPI:
+
+```bash
+pip install "dakma-sdk==3.0.0"
+```
+
+Image explanations need the deep-learning extra:
+
+```bash
+pip install "dakma-sdk[dl]==3.0.0"
+```
+
+| Requirement | Detail |
+| --- | --- |
+| Python | `>=3.9` |
+| Package | `dakma-sdk==3.0.0` (`pyproject.toml` version is already `3.0.0`) |
+| Runtime | `numpy>=1.22` |
+| Image explanations | extra `[dl]`: `torch>=2.0`, `captum>=0.6` |
+| Tabular explanations | extra `[ml]`: `pandas>=1.5`, `scikit-learn>=1.3`, `xgboost>=1.7`, `shap>=0.44` |
+| Model | one PyTorch `nn.Module`, one image `(1, C, H, W)` or `(C, H, W)` |
+
 ## Publishing to PyPI
 
 Releases are published by [`.github/workflows/publish.yml`](.github/workflows/publish.yml) when you:
 
-- push a version tag (e.g. `v0.1.0`), or
+- push a version tag (e.g. `v3.0.0`), or
 - publish a GitHub Release, or
 - run the workflow manually (**Actions → Publish to PyPI → Run workflow**).
+
+The workflow builds with `python -m build`, runs `twine check`, and uploads via [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (no long-lived API token in the repo). A tag push and the GitHub Release for that same tag both trigger the workflow. The second run skips a version that is already on PyPI.
 
 ### One-time PyPI setup (trusted publishing)
 
@@ -299,16 +326,21 @@ Releases are published by [`.github/workflows/publish.yml`](.github/workflows/pu
    - **Workflow name:** `publish.yml`
    - **Environment name:** `pypi`
 3. In GitHub → **Settings → Environments** → create environment **`pypi`** (optional approval rules recommended).
-4. Bump `version` in `pyproject.toml`, update `CHANGELOG.md`, commit, then:
+
+**Fallback:** token upload is a separate setup. This workflow publishes with trusted publishing.
+
+### Publish 3.0.0
+
+Do this from the commit that contains `version = "3.0.0"` and the 3.0.0 changelog, after that commit is on `main`. Pushing the tag uploads the package.
 
 ```bash
+git checkout main
+git pull
 git tag v3.0.0
 git push origin v3.0.0
 ```
 
-The workflow builds with `python -m build`, runs `twine check`, and uploads via [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (no long-lived API token in the repo).
-
-**Fallback:** set a repository secret `PYPI_API_TOKEN` if you prefer token-based upload instead of trusted publishing.
+Then publish the GitHub Release for `v3.0.0` with the 3.0.0 notes from `CHANGELOG.md`. Confirm [dakma-sdk 3.0.0](https://pypi.org/project/dakma-sdk/3.0.0/) on PyPI.
 
 ## Limitations
 

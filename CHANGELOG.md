@@ -5,7 +5,10 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2026-11-07
+## [3.0.0] - 2026-11-12
+
+Image classification. A trained PyTorch classifier can be explained on a test image: the predicted
+class is recorded, and the pixels that moved that decision are painted on the input.
 
 ### Added
 
@@ -15,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output without changing the decision. An out-of-range index raises `ValueError`.
 - The explanation paints those regions on the input image. Red supported the explained class and
   blue counted against it. Reports show the overlay, and `highlighted_image()` returns the PNG.
+- `ImageAttribution` is exported from `dakma` and `dakma_sdk`.
+
+### Changed
+
+- The overlay is a translucent gradient. The input image stays visible, and the color deepens
+  where a region mattered more. Weaker regions remain on the same scale.
+
+### Requirements
+
+- Python `>=3.9`.
+- Runtime dependency: `numpy>=1.22`.
+- Image explanations require the `dl` extra: `torch>=2.0` and `captum>=0.6`
+  (`pip install "dakma-sdk[dl]==3.0.0"`).
+- The model is a PyTorch `nn.Module`. Pass one image shaped `(1, C, H, W)` or `(C, H, W)`.
 
 ## [2.2.0] - 2026-11-06
 
