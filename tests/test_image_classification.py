@@ -4,12 +4,37 @@ from __future__ import annotations
 
 import pytest
 
+import numpy as np
+
 import dakma
-from dakma_sdk.image import explain_image_prediction
+from dakma_sdk.image import _blend_overlay, explain_image_prediction
 
 
 def _side(factors, side: str) -> float:
     return sum(factor.impact for factor in factors if side in factor.name)
+
+
+def test_overlay_tints_the_input_without_covering_it() -> None:
+    image = np.full((4, 8, 3), 255, dtype=np.uint8)
+    image[:, :4] = 0
+    signed = np.zeros((4, 8))
+    signed[:, 4:] = 1.0
+    overlay = _blend_overlay(image, signed)
+
+    assert overlay[:, :4].max() == 0
+    right = overlay[:, 4:]
+    assert right[..., 0].min() == 255
+    assert right[..., 1].min() > 140
+    assert right[..., 2].min() > 140
+
+
+def test_overlay_shows_weaker_regions_on_the_same_gradient() -> None:
+    image = np.full((1, 4, 3), 200, dtype=np.uint8)
+    signed = np.array([[0.0, 0.1, 0.4, 1.0]], dtype=float)
+    red = _blend_overlay(image, signed)[0, :, 0].astype(int)
+
+    assert red[0] == 200
+    assert red[3] > red[2] > red[1] > red[0]
 
 
 def test_two_outputs_pick_the_higher_class() -> None:

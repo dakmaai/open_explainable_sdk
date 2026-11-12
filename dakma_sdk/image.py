@@ -2,8 +2,9 @@
 
 The wrapped model receives one channels-first image, ``(1, C, H, W)`` or ``(C, H, W)``.
 Attributions for the explained class are summed over channels into a heatmap and painted
-onto that input image: red where the region supported the class, blue where it counted
-against it.
+onto that input image as a translucent tint: red where the region supported the class,
+blue where it counted against it. The color deepens with the attribution, so weaker
+regions stay on the same gradient. The input image stays visible under the tint.
 """
 
 from __future__ import annotations
@@ -161,11 +162,23 @@ def _display_rgb(chw: np.ndarray) -> np.ndarray:
     return (scaled * 255.0).astype(np.uint8)
 
 
+# Peak tint opacity. The rest of each pixel is the original image, so a bright input
+# stays bright instead of being replaced by a flat red or blue block.
+_MAX_OVERLAY_ALPHA = 0.4
+# Below 1 the scale is compressed, so a region with a fraction of the peak attribution
+# still receives a visible tint instead of disappearing next to the strongest pixels.
+_OVERLAY_GAMMA = 0.45
+
+
 def _blend_overlay(image: np.ndarray, signed: np.ndarray) -> np.ndarray:
+    """Tint ``image`` on a gradient. Deeper red supports the class; deeper blue counts against it."""
     magnitude = np.abs(signed)
     peak = float(magnitude.max())
-    strength = np.zeros_like(magnitude) if peak == 0.0 else magnitude / peak
-    alpha = (strength * 0.75)[..., None]
+    if peak == 0.0:
+        strength = np.zeros_like(magnitude)
+    else:
+        strength = np.power(magnitude / peak, _OVERLAY_GAMMA)
+    alpha = (strength * _MAX_OVERLAY_ALPHA)[..., None]
     red = np.zeros_like(image)
     red[..., 0] = 255
     blue = np.zeros_like(image)

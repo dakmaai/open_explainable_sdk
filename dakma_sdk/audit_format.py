@@ -489,7 +489,8 @@ def _image_overlay_markdown(attribution: Any) -> str:
     name = attribution.get("explained_class_name") or ""
     return (
         f"![Areas of interest for class {name}](data:image/png;base64,{png})\n\n"
-        "Red regions supported the explained class. Blue regions counted against it."
+        "Red supported the explained class and blue counted against it. "
+        "The color deepens where that region mattered more."
     )
 
 
@@ -503,7 +504,8 @@ def _image_overlay_html(attribution: Any) -> str:
     return (
         f'<img alt="Areas of interest for class {name}" '
         f'src="data:image/png;base64,{png}" />'
-        "<p><em>Red regions supported the explained class. Blue regions counted against it.</em></p>"
+        "<p><em>Red supported the explained class and blue counted against it. "
+        "The color deepens where that region mattered more.</em></p>"
     )
 
 
