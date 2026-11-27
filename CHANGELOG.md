@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Image explanations summarize the heatmap over a 4x4 grid of regions (2x2 below 4 pixels) instead of
+  four quadrants. Regions are named by pixel ranges (`rows 7-13, cols 0-6`) instead of `upper left`.
+  `explain_image` defaults to `n_steps=50`.
+- A one-score image decision now records the `threshold` it used.
+
+### Added
+
+- `ImageAttribution` keeps the signed per-pixel `attribution`, `n_steps`, `baseline`, `score_change`
+  and `convergence_delta` (the attributions' gap to the score change). Reports show them and ask for
+  more steps when the gap exceeds 5% of the score change.
+- Image reports list the top pixels as `row r, col c` with their impact, taken from the stored grid.
+- `image_classification_example.py` trains a CNN on MNIST (needs `torchvision`) instead of using a fixed rule.
+
 ## [3.0.0] - 2026-11-12
 
 Image classification. A trained PyTorch classifier can be explained on a test image: the predicted

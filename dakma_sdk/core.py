@@ -251,7 +251,7 @@ class ModelHandle:
         threshold: float = 0.5,
         counterfactual: bool = False,
         top_k: int = 4,
-        n_steps: int = 16,
+        n_steps: int = 50,
         baseline: Any = None,
         channels_last: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
@@ -652,7 +652,7 @@ class DakmaClient:
         threshold: float = 0.5,
         counterfactual: bool = False,
         top_k: int = 4,
-        n_steps: int = 16,
+        n_steps: int = 50,
         baseline: Any = None,
         channels_last: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., DecisionEvent]]:
@@ -760,7 +760,7 @@ class DakmaClient:
                         multiclass_decision = Decision(
                             value=predicted_name,
                             score=probability,
-                            threshold=None,
+                            threshold=float(threshold) if n_outputs == 1 else None,
                             predicted_class=predicted_name,
                             class_index=predicted_index,
                         )

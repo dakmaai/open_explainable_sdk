@@ -211,6 +211,13 @@ result.highlighted_image()               # PNG bytes of the overlay
 A model that returns two scores is binary. Three or more scores are multi-class. One score is the
 positive class compared with `threshold`; pass `class_names=["negative", "positive"]` for those labels.
 
+`top_factors` sum the heatmap over a 4x4 grid of regions (2x2 for images under 4 pixels wide or tall),
+named by zero-based pixel ranges such as `rows 7-13, cols 0-6`. Reports also list the top pixels as
+`row r, col c`.
+The explanation also keeps the signed per-pixel attribution, the steps (`n_steps`, default 50) and the
+baseline (black unless you pass `baseline`). Reports show how far the attributions miss the score change
+and ask for more steps when the gap is large.
+
 ## Text classification (highlighted words)
 
 Requires the **`[dl]`** extra. `explain_text` attributes the decision to individual tokens with
@@ -297,7 +304,7 @@ Run these from `examples/` after installing the extra named in the table.
 | `forecast_example.py` | Demand forecast from lag and calendar feature metrics | `[ml]` |
 | `mlp_integrated_gradients_example.py` | PyTorch MLP explained with Integrated Gradients | `[ml,dl]` |
 | `text_highlight_example.py` | Token highlights for a text classifier | `[dl]` |
-| `image_classification_example.py` | Image classifier with the decision painted on the input | `[dl]` |
+| `image_classification_example.py` | CNN trained on MNIST, one digit explained and painted on the input (also `pip install torchvision`) | `[dl]` |
 
 Reports are written next to each script, under `examples/reports/`, `examples/reports_svm/`, `examples/reports_ig/`, `examples/reports_text/`, `examples/reports_forecast/`, `examples/reports_iris/`, `examples/reports_wine/`, and `examples/reports_image/`.
 
