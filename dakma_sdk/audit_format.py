@@ -480,6 +480,42 @@ def _format_compute_usage_html(cu: Mapping[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _image_check_note(attribution: Mapping[str, Any]) -> str:
+    """Steps, baseline and the sum check; warns when the gap exceeds 5% of the score change."""
+    steps, baseline = attribution.get("n_steps"), attribution.get("baseline")
+    delta, change = attribution.get("convergence_delta"), attribution.get("score_change")
+    if steps is None or baseline is None or delta is None or change is None:
+        return ""
+    note = (
+        f"Integrated Gradients used {steps} steps from a {baseline} baseline. "
+        f"The attributions miss the score change of {change:.4f} by {delta:+.4f}."
+    )
+    if abs(delta) > 0.05 * max(abs(change), 1e-9):
+        note += " The gap is large, so raise n_steps."
+    return note
+
+
+def _top_pixels(attribution: Mapping[str, Any], limit: int = 8) -> List[Tuple[str, str]]:
+    """The pixels with the largest impact as ``("row r, col c", "+0.0123")``, zero-based."""
+    grid = attribution.get("attribution")
+    if not grid:
+        return []
+    values = np.asarray(grid, dtype=float)
+    order = np.argsort(-np.abs(values), axis=None)[:limit]
+    return [
+        (f"row {r}, col {c}", f"{values[r, c]:+.4f}")
+        for r, c in (np.unravel_index(i, values.shape) for i in order)
+        if values[r, c] != 0.0
+    ]
+
+
+def _image_pixels_markdown(attribution: Mapping[str, Any]) -> str:
+    rows = _top_pixels(attribution)
+    if not rows:
+        return ""
+    return "\n\n**Top pixels** (zero-based row and column)\n\n" + _markdown_table(["Pixel", "Impact"], rows)
+
+
 def _image_overlay_markdown(attribution: Any) -> str:
     if not isinstance(attribution, dict):
         return ""
@@ -490,8 +526,9 @@ def _image_overlay_markdown(attribution: Any) -> str:
     return (
         f"![Areas of interest for class {name}](data:image/png;base64,{png})\n\n"
         "Red supported the explained class and blue counted against it. "
-        "The color deepens where that region mattered more."
-    )
+        "The color deepens where that region mattered more. "
+        + _image_check_note(attribution)
+    ).strip() + _image_pixels_markdown(attribution)
 
 
 def _image_overlay_html(attribution: Any) -> str:
@@ -505,7 +542,14 @@ def _image_overlay_html(attribution: Any) -> str:
         f'<img alt="Areas of interest for class {name}" '
         f'src="data:image/png;base64,{png}" />'
         "<p><em>Red supported the explained class and blue counted against it. "
-        "The color deepens where that region mattered more.</em></p>"
+        "The color deepens where that region mattered more. "
+        + _html_esc(_image_check_note(attribution))
+        + "</em></p>"
+        + (
+            _html_h3("Top pixels (zero-based row and column)") + _html_table(["Pixel", "Impact"], rows)
+            if (rows := _top_pixels(attribution))
+            else ""
+        )
     )
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 import numpy as np
@@ -10,8 +12,14 @@ import dakma
 from dakma_sdk.image import _blend_overlay, explain_image_prediction
 
 
-def _side(factors, side: str) -> float:
-    return sum(factor.impact for factor in factors if side in factor.name)
+def _side(factors, side: str, width: int) -> float:
+    """Sum impacts of regions whose columns sit in the left or right half of the image."""
+    total = 0.0
+    for factor in factors:
+        first = int(re.search(r"cols? (\d+)", factor.name).group(1))
+        if (first < width // 2) == (side == "left"):
+            total += factor.impact
+    return total
 
 
 def test_overlay_tints_the_input_without_covering_it() -> None:
@@ -96,7 +104,7 @@ def test_overlay_localizes_binary_and_multiclass_regions(tmp_path) -> None:
     event = classify_binary(binary, bright_on_the_right(8))
     assert event.decision.predicted_class == "dog"
     assert event.decision.value not in {"APPROVED", "DECLINED"}
-    assert _side(event.explanation.factors, "right") > _side(event.explanation.factors, "left")
+    assert _side(event.explanation.factors, "right", 8) > _side(event.explanation.factors, "left", 8)
     png = event.highlighted_image()
     assert png.startswith(b"\x89PNG")
     assert event.explanation.image_attribution is not None
@@ -109,7 +117,7 @@ def test_overlay_localizes_binary_and_multiclass_regions(tmp_path) -> None:
     multi = StripClassifier(3).eval()
     event = classify_multi(multi, bright_on_the_right(12))
     assert event.decision.predicted_class == "bird"
-    assert _side(event.explanation.factors, "right") > _side(event.explanation.factors, "left")
+    assert _side(event.explanation.factors, "right", 12) > _side(event.explanation.factors, "left", 12)
 
     # A dim left strip still loses to the bright right strip, but it is no longer
     # identical to the zero baseline, so its class has a visible region.
@@ -124,7 +132,7 @@ def test_overlay_localizes_binary_and_multiclass_regions(tmp_path) -> None:
     assert other.decision.predicted_class == "bird"
     assert other.explanation.metadata["explained_class"] == "cat"
     assert "Explaining class cat" in other.explanation.plain_language
-    assert _side(other.explanation.factors, "left") > _side(other.explanation.factors, "right")
+    assert _side(other.explanation.factors, "left", 12) > _side(other.explanation.factors, "right", 12)
 
     with pytest.raises(ValueError, match="out of range"):
         classify_other_bad = dm.explain_image(class_names=["cat", "dog", "bird"], target_class=5)(
@@ -161,11 +169,11 @@ def test_single_score_heatmap_supports_the_predicted_class() -> None:
     left[:, :, :, :4] = 1.0
     negative = classify(model, left)
     assert negative.decision.predicted_class == "negative"
-    assert _side(negative.explanation.factors, "left") > _side(negative.explanation.factors, "right")
+    assert _side(negative.explanation.factors, "left", 8) > _side(negative.explanation.factors, "right", 8)
 
     positive = classify(model, left.flip(-1))
     assert positive.decision.predicted_class == "positive"
-    assert _side(positive.explanation.factors, "right") > _side(positive.explanation.factors, "left")
+    assert _side(positive.explanation.factors, "right", 8) > _side(positive.explanation.factors, "left", 8)
 
 
 def test_channels_last_layout_is_accepted() -> None:
@@ -190,3 +198,105 @@ def test_channels_last_layout_is_accepted() -> None:
     event = classify(StripClassifier().eval(), image)
     assert event.decision.predicted_class == "dog"
     assert event.highlighted_image().startswith(b"\x89PNG")
+
+
+def test_regions_use_a_4x4_grid_and_fall_back_to_2x2_for_tiny_images() -> None:
+    from dakma_sdk.image import _region_factors
+
+    factors = _region_factors(np.ones((8, 8)), top_k=99)
+    assert len(factors) == 16
+    assert sum(factor.impact for factor in factors) == pytest.approx(64.0)
+    names = {factor.name for factor in factors}
+    assert {"rows 0-1, cols 0-1", "rows 2-3, cols 4-5", "rows 6-7, cols 6-7"} <= names
+    tiny = _region_factors(np.ones((3, 3)), top_k=99)
+    assert len(tiny) == 4
+    assert {"rows 0-1, cols 0-1", "row 2, col 2"} <= {factor.name for factor in tiny}
+
+
+def _saturating_model(nn, torch):
+    class Saturating(nn.Module):
+        def forward(self, image):
+            return torch.sigmoid(8.0 * (image.mean(dim=(1, 2, 3)) - 0.3)).unsqueeze(-1)
+
+    return Saturating().eval()
+
+
+def test_attribution_grid_is_kept_and_more_steps_close_the_gap() -> None:
+    torch = pytest.importorskip("torch")
+    nn = pytest.importorskip("torch.nn")
+    from dakma_sdk.image import image_areas_of_interest
+
+    model = _saturating_model(nn, torch)
+    image = torch.ones(1, 1, 8, 8)
+
+    def run(n_steps: int):
+        return image_areas_of_interest(
+            model, image, explained_class=0, explained_class_name="a", n_steps=n_steps
+        )[1]
+
+    coarse, fine = run(1), run(100)
+    assert (len(fine.attribution), len(fine.attribution[0])) == (8, 8)
+    assert fine.baseline == "black" and fine.n_steps == 100
+    assert sum(map(sum, fine.attribution)) == pytest.approx(fine.score_change + fine.convergence_delta, abs=1e-4)
+    assert abs(fine.convergence_delta) < 0.01 * abs(fine.score_change)
+    assert abs(coarse.convergence_delta) > 10 * abs(fine.convergence_delta)
+
+
+def test_report_shows_steps_baseline_and_flags_a_large_gap(tmp_path) -> None:
+    torch = pytest.importorskip("torch")
+    nn = pytest.importorskip("torch.nn")
+
+    model = _saturating_model(nn, torch)
+    dm = dakma.init(project="image-gap")
+
+    def explain(n_steps: int):
+        @dm.explain_image(class_names=["negative", "positive"], n_steps=n_steps)
+        def classify(model, image):
+            return model(image)
+
+        return classify(model, torch.ones(1, 1, 8, 8))
+
+    good = explain(100).write_report(tmp_path / "good.html", format="html").read_text(encoding="utf-8")
+    assert "100 steps from a black baseline" in good
+    assert "raise n_steps" not in good
+    bad = explain(1).write_report(tmp_path / "bad.html", format="html").read_text(encoding="utf-8")
+    assert "raise n_steps" in bad
+
+
+def test_single_score_decision_records_its_threshold() -> None:
+    torch = pytest.importorskip("torch")
+    nn = pytest.importorskip("torch.nn")
+
+    model = _saturating_model(nn, torch)
+    dm = dakma.init(project="image-threshold")
+
+    @dm.explain_image(class_names=["negative", "positive"], threshold=0.7, n_steps=2)
+    def classify(model, image):
+        return model(image)
+
+    event = classify(model, torch.ones(1, 1, 8, 8))
+    assert event.decision.threshold == pytest.approx(0.7)
+
+
+def test_report_lists_the_top_pixels_with_coordinates(tmp_path) -> None:
+    torch = pytest.importorskip("torch")
+    nn = pytest.importorskip("torch.nn")
+
+    class OnePixel(nn.Module):
+        def forward(self, image):
+            return torch.stack([image[:, :, 2, 5].sum(dim=1), image[:, :, 6, 1].sum(dim=1)], dim=-1)
+
+    image = torch.zeros(1, 1, 8, 8)
+    image[:, :, 2, 5] = 1.0
+    dm = dakma.init(project="image-pixels")
+
+    @dm.explain_image(class_names=["a", "b"], n_steps=4)
+    def classify(model, image):
+        return model(image)
+
+    event = classify(OnePixel().eval(), image)
+    assert event.explanation.factors[0].name == "rows 2-3, cols 4-5"
+    html = event.write_report(tmp_path / "pixels.html", format="html").read_text(encoding="utf-8")
+    assert "Top pixels" in html and "row 2, col 5" in html
+    markdown = event.write_report(tmp_path / "pixels.md").read_text(encoding="utf-8")
+    assert "| row 2, col 5 | +1.0000 |" in markdown

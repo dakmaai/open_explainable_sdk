@@ -16,7 +16,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .integrated_gradients import _torch_nn, compute_integrated_gradients_attributions
+from .integrated_gradients import _forward_logits, _torch_nn, compute_integrated_gradients_attributions
 from .models import ImageAttribution, TopFactor
 
 
@@ -56,7 +56,7 @@ def image_areas_of_interest(
     *,
     explained_class: int,
     explained_class_name: str,
-    n_steps: int = 16,
+    n_steps: int = 50,
     baseline: Any = None,
     channels_last: bool = False,
     top_k: int = 4,
@@ -68,20 +68,20 @@ def image_areas_of_interest(
     ``target_output`` is the model output index Integrated Gradients explains.
     It defaults to ``explained_class``. ``polarity`` flips the heatmap so red
     still marks regions that supported the recorded class when that class is the
-    negative side of a single score.
+    negative side of a single score. The result records the signed per-pixel grid and
+    how far it misses the score change from the baseline (``convergence_delta``).
     """
     torch, _ = _torch_nn()
     if torch is None:
         raise RuntimeError("PyTorch is required for image explanations. Install torch (dakma-sdk[dl]).")
     batched = _as_nchw(image, channels_last=channels_last)
+    target = int(explained_class if target_output is None else target_output)
+    baseline_t = torch.zeros_like(batched) if baseline is None else _baseline_like(baseline, batched)
     attr = compute_integrated_gradients_attributions(
-        model,
-        batched,
-        baseline=baseline,
-        n_steps=n_steps,
-        target_class=int(explained_class if target_output is None else target_output),
+        model, batched, baseline=baseline_t, n_steps=n_steps, target_class=target
     )
     signed = np.sum(attr[0].detach().cpu().numpy(), axis=0).astype(float) * float(polarity)
+    score_change = _score_change(model, batched, baseline_t, target) * float(polarity)
     display = _display_rgb(batched[0].detach().cpu().numpy())
     overlay = _blend_overlay(display, signed)
     factors = _region_factors(signed, top_k=top_k)
@@ -91,8 +91,30 @@ def image_areas_of_interest(
         explained_class=int(explained_class),
         explained_class_name=explained_class_name,
         overlay_png=base64.b64encode(_encode_png(overlay)).decode("ascii"),
+        attribution=np.round(signed, 6).tolist(),
+        n_steps=int(n_steps),
+        baseline="black" if baseline is None else "custom",
+        score_change=score_change,
+        convergence_delta=float(signed.sum()) - score_change,
     )
     return factors, attribution
+
+
+def _baseline_like(baseline: Any, batched: Any) -> Any:
+    torch, _ = _torch_nn()
+    tensor = torch.as_tensor(baseline).to(batched.dtype)
+    if tensor.shape != batched.shape:
+        tensor = tensor.reshape(batched.shape[1:]).unsqueeze(0).expand_as(batched)
+    return tensor
+
+
+def _score_change(model: Any, batched: Any, baseline: Any, target: int) -> float:
+    """Explained output at the input minus at the baseline."""
+    torch, _ = _torch_nn()
+    with torch.no_grad():
+        scores = [_forward_logits(model, t) for t in (batched, baseline)]
+    after, before = (float(s.reshape(-1, s.shape[-1])[0][target]) for s in scores)
+    return after - before
 
 
 def _output_vector(raw_decision: Any) -> np.ndarray:
@@ -188,19 +210,27 @@ def _blend_overlay(image: np.ndarray, signed: np.ndarray) -> np.ndarray:
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
+def _span(label: str, indices: np.ndarray) -> str:
+    first, last = int(indices[0]), int(indices[-1])
+    return f"{label} {first}" if first == last else f"{label}s {first}-{last}"
+
+
 def _region_factors(signed: np.ndarray, *, top_k: int) -> List[TopFactor]:
-    height, width = signed.shape
-    row_cuts = [0, height // 2, height]
-    col_cuts = [0, width // 2, width]
-    names = (("upper left", "upper right"), ("lower left", "lower right"))
+    """Sum the heatmap over a 4x4 grid of regions (2x2 for images under 4 pixels).
+
+    Regions are named by their zero-based pixel ranges, e.g. ``rows 7-13, cols 0-6``.
+    """
+    grid = 4 if min(signed.shape) >= 4 else 2
+    rows = np.array_split(np.arange(signed.shape[0]), grid)
+    cols = np.array_split(np.arange(signed.shape[1]), grid)
     factors: List[TopFactor] = []
-    for row in range(2):
-        for col in range(2):
-            block = signed[row_cuts[row] : row_cuts[row + 1], col_cuts[col] : col_cuts[col + 1]]
+    for row in rows:
+        for col in cols:
+            block = signed[np.ix_(row, col)]
             impact = float(np.sum(block))
             factors.append(
                 TopFactor(
-                    name=names[row][col],
+                    name=f"{_span('row', row)}, {_span('col', col)}",
                     value=float(np.mean(np.abs(block))),
                     impact=impact,
                     direction="up" if impact >= 0 else "down",

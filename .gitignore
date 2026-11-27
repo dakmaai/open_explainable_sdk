@@ -59,3 +59,5 @@ examples/reports_wine/*
 
 # Local-only files
 CLAUDE.md
+# Downloaded datasets
+examples/data/

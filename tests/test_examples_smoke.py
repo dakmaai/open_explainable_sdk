@@ -74,9 +74,11 @@ def test_mlp_integrated_gradients_example_runs() -> None:
 @pytest.mark.smoke
 def test_image_classification_example_runs() -> None:
     pytest.importorskip("torch", reason="image example needs torch (pip install dakma-sdk[dl])")
-    result = _run_example("image_classification_example.py", timeout=120)
+    pytest.importorskip("torchvision", reason="image example trains on MNIST (pip install torchvision)")
+    result = _run_example("image_classification_example.py", timeout=600)
     assert result.returncode == 0, result.stderr or result.stdout
-    assert "bird" in result.stdout
+    assert "Test accuracy" in result.stdout
+    assert "attributions sum to" in result.stdout
     assert "Downloadable reports" in result.stdout
     assert "image_decision.html" in result.stdout
 

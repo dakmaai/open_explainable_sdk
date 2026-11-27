@@ -37,14 +37,25 @@ class TokenAttribution:
 
 @dataclass
 class ImageAttribution:
-    """Heatmap of the regions that supported an image classification, painted on the input."""
+    """Heatmap of the regions that supported an image classification, painted on the input.
+
+    ``overlay_png`` is the base64 PNG of the painted input. ``attribution`` is the signed
+    per-pixel Integrated Gradients (channels summed, positive supports the class), kept so
+    regions and sums can be re-checked. ``convergence_delta`` is
+    ``sum(attribution) - score_change`` where ``score_change`` is the explained score at the
+    input minus at the baseline; a large gap means too few ``n_steps``.
+    """
 
     width: int
     height: int
     explained_class: int
     explained_class_name: str
-    #: Base64-encoded PNG of the input image with the attribution overlay.
     overlay_png: str
+    attribution: Optional[List[List[float]]] = None
+    n_steps: Optional[int] = None
+    baseline: Optional[str] = None
+    score_change: Optional[float] = None
+    convergence_delta: Optional[float] = None
 
     def png_bytes(self) -> bytes:
         import base64
